@@ -1,3 +1,4 @@
+import { type Layer, type Direction, type DirectionValue, type Notoriety, type SpellName, type SkillName } from './constants.js';
 declare class ScriptMethod {
     constructor(protocol: any, methodIndex: any, argTypes: any, returnType: any);
     call(...args: any[]): Promise<any>;
@@ -104,12 +105,12 @@ export declare function createMethods(protocol: any): {
     HighJournal: () => Promise<any>;
     ClearJournal: () => Promise<any>;
     AddToSystemJournal: (text: any) => Promise<any>;
-    UseSkill: (skillNameOrId: any) => Promise<boolean>;
+    UseSkill: (skillNameOrId: SkillName | string | number) => Promise<boolean>;
     UseSkillID: (skillId: any) => Promise<any>;
-    GetSkillValue: (skillNameOrId: any) => Promise<any>;
-    GetSkillCap: (skillNameOrId: any) => Promise<any>;
+    GetSkillValue: (skillNameOrId: SkillName | string | number) => Promise<any>;
+    GetSkillCap: (skillNameOrId: SkillName | string | number) => Promise<any>;
     GetSkillID: (skillName: any) => Promise<any>;
-    Cast: (spellName: any, objId?: any) => Promise<boolean>;
+    Cast: (spellName: SpellName | string, objId?: number | null) => Promise<boolean>;
     CastToObj: (spellName: any, objId: any) => Promise<boolean>;
     CastToObject: (spellName: any, objId: any) => Promise<boolean>;
     CastToSelf: (spellName: any) => Promise<boolean>;
@@ -118,7 +119,7 @@ export declare function createMethods(protocol: any): {
     IsActiveSpellAbility: (spellNameOrId: any) => Promise<any>;
     SetCatchBag: (objId: any) => Promise<any>;
     UnsetCatchBag: () => Promise<any>;
-    GetNotoriety: (objId: any) => Promise<any>;
+    GetNotoriety: (objId: any) => Promise<Notoriety>;
     GetParent: (objId: any) => Promise<any>;
     IsNPC: (objId: any) => Promise<any>;
     IsDead: (objId: any) => Promise<any>;
@@ -127,20 +128,20 @@ export declare function createMethods(protocol: any): {
     IsMovable: (objId: any) => Promise<any>;
     IsYellowHits: (objId: any) => Promise<any>;
     IsFemale: (objId: any) => Promise<any>;
-    GetLayer: (objId: any) => Promise<any>;
+    GetLayer: (objId: any) => Promise<Layer>;
     IsHouse: (objId: any) => Promise<any>;
     DragItem: (objId: any, count: any) => Promise<any>;
     DropItem: (objId: any, x: any, y: any, z: any) => Promise<any>;
     OpenDoor: (objId: any) => Promise<any>;
     Bow: () => Promise<any>;
     Salute: () => Promise<any>;
-    WearItem: (layer: any, objId: any) => Promise<any>;
-    ObjAtLayerEx: (layer: any, objId?: number) => Promise<any>;
-    Step: (direction: any, run?: boolean) => Promise<any>;
-    StepQ: (direction: any, run?: boolean) => Promise<any>;
+    WearItem: (layer: Layer | number, objId: number) => Promise<any>;
+    ObjAtLayerEx: (layer: Layer | number, objId?: number) => Promise<any>;
+    Step: (direction: Direction | DirectionValue, run?: boolean) => Promise<any>;
+    StepQ: (direction: Direction | DirectionValue, run?: boolean) => Promise<any>;
     MoveXYZ: (x: any, y: any, z: any, accuracyXY: any, accuracyZ: any, running: any) => Promise<any>;
     MoveXY: (x: any, y: any, accuracyXY: any, running: any, exact: any) => Promise<any>;
-    CalcDir: (xFrom: any, yFrom: any, xTo: any, yTo: any) => 4 | 0 | 1 | 2 | 7 | 6 | 5 | 100 | 3;
+    CalcDir: (xFrom: any, yFrom: any, xTo: any, yTo: any) => 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0 | 100;
     IsWorldCellPassable: (currX: any, currY: any, currZ: any, destX: any, destY: any, worldNum: any) => Promise<any>;
     SetBadLocation: (x: any, y: any) => Promise<any>;
     SetGoodLocation: (x: any, y: any) => Promise<any>;
@@ -321,8 +322,8 @@ export declare function createMethods(protocol: any): {
     SetDressSpeed: (value: any) => Promise<any>;
     SetDress: () => Promise<any>;
     EquipDressSet: () => Promise<any>;
-    AutoBuy: (shopNum: any, itemType: any, itemColor: any, quantity: any) => Promise<any>;
-    AutoBuyEx: (shopNum: any, itemType: any, itemColor: any, quantity: any, name: any) => Promise<any>;
+    AutoBuy: (itemType: any, itemColor: any, quantity: any) => Promise<any>;
+    AutoBuyEx: (itemType: any, itemColor: any, quantity: any, price: any, itemName: any) => Promise<any>;
     GetAutoBuyDelay: (shopNum: any) => Promise<any>;
     SetAutoBuyDelay: (shopNum: any, value: any) => Promise<any>;
     AutoSell: (shopNum: any, itemType: any, itemColor: any, quantity: any) => Promise<any>;
@@ -349,7 +350,7 @@ export declare function createMethods(protocol: any): {
     GetMultis: () => Promise<any>;
     ClearInfoWindow: () => Promise<any>;
     GetBuffBarInfo: () => Promise<any>;
-    FindTypesArrayEx: (objTypes: any, colors: any, containers: any, inSub: any) => Promise<any>;
+    FindTypesArrayEx: (objTypes: any, colors: any, containers: any, inSub: any) => Promise<number>;
     BandageSelf: () => Promise<any>;
     UseItemOnMobile: (itemId: any, targetId: any) => Promise<any>;
     GlobalChatJoinChannel: (channelName: any) => Promise<any>;

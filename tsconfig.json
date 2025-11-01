@@ -4,7 +4,7 @@
     "module": "ES2022",
     "moduleResolution": "node",
     "lib": ["ES2022"],
-    "outDir": "./",
+    "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
     "declarationMap": false,
@@ -19,7 +19,7 @@
     "preserveConstEnums": true,
     "removeComments": false
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"],
-  "exclude": ["node_modules", "**/*.js", "index.d.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
 

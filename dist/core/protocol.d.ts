@@ -18,7 +18,6 @@ export declare class Protocol extends EventEmitter {
     sendPacket(type: number, methodIndex: number, id: number, data?: Buffer): void;
     sendPacketsBatch(packets: Buffer[]): void;
     sendMethod(methodIndex: number, argData: Buffer, expectResult?: boolean): number;
-    sendMethodAsync(methodIndex: number, argData: Buffer): () => Promise<Buffer>;
     private _onData;
     private _parseBuffer;
     private _handlePacket;

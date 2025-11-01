@@ -1,25 +1,13 @@
 import { packUInt32, packUInt16, unpackUInt32, unpackUInt16 } from './datatypes.js';
 import { EventEmitter } from 'events';
+import { EVENTS } from '../constants.js';
 const VERSION = [2, 7, 0, 0];
 const PACKET_TYPE_RESULT = 1;
 const PACKET_TYPE_TERMINATE = 2;
 const PACKET_TYPE_PAUSE = 4;
 const PACKET_TYPE_EVENT = 6;
 const PACKET_TYPE_REQ_SCRIPT_PATH = 9;
-const EVENTS_NAMES = [
-    'eviteminfo', 'evitemdeleted', 'evspeech', 'evdrawgameplayer',
-    'evmoverejection', 'evdrawcontainer', 'evadditemtocontainer',
-    'evaddmultipleitemsincont', 'evrejectmoveitem', 'evupdatechar',
-    'evdrawobject', 'evmenu', 'evmapmessage', 'evallowrefuseattack',
-    'evclilocspeech', 'evclilocspeechaffix', 'evunicodespeech',
-    'evbuffdebuffsystem', 'evclientsendresync', 'evcharanimation',
-    'evicqdisconnect', 'evicqconnect', 'evicqincomingtext', 'evicqerror',
-    'evincominggump', 'evtimer1', 'evtimer2', 'evwindowsmessage', 'evsound',
-    'evdeath', 'evquestarrow', 'evpartyinvite', 'evmappin', 'evgumptextentry',
-    'evgraphicaleffect', 'evircincomingtext', 'evmessengerevent',
-    'evsetglobalvar', 'evupdateobjstats', 'evglobalchat', 'evwardamage',
-    'evcontextmenu'
-];
+const EVENTS_NAMES = EVENTS;
 export class Protocol extends EventEmitter {
     socket;
     _id;
@@ -72,11 +60,6 @@ export class Protocol extends EventEmitter {
         const id = expectResult ? this.methodId() : 0;
         this.sendPacket(PACKET_TYPE_RESULT, methodIndex, id, argData);
         return id;
-    }
-    sendMethodAsync(methodIndex, argData) {
-        const id = this.methodId();
-        this.sendPacket(PACKET_TYPE_RESULT, methodIndex, id, argData);
-        return () => this.waitForResult(id);
     }
     _onData(data) {
         this._buffer = Buffer.concat([this._buffer, data]);
@@ -137,7 +120,7 @@ export class Protocol extends EventEmitter {
         }
         this.emit(EVENTS_NAMES[eventIndex] || `event${eventIndex}`, data);
     }
-    async waitForResult(id, timeout = 30000) {
+    async waitForResult(id, timeout = 1500) {
         if (this.results.has(id)) {
             const result = this.results.get(id);
             this.results.delete(id);

@@ -71,7 +71,8 @@ export function unpackBool(buffer: Buffer, offset: number = 0): boolean {
 }
 
 export function packString(value: string): Buffer {
-  const strBytes = Buffer.from(value, 'utf-8');
+  // Stealth uses UTF-16LE encoding (like Windows)
+  const strBytes = Buffer.from(value, 'utf-16le');
   const length = packUInt32(strBytes.length);
   return Buffer.concat([length, strBytes]);
 }
@@ -79,7 +80,8 @@ export function packString(value: string): Buffer {
 export function unpackString(buffer: Buffer, offset: number = 0): string {
   const length = unpackUInt32(buffer, offset);
   const start = offset + 4;
-  return buffer.toString('utf-8', start, start + length);
+  // Stealth uses UTF-16LE encoding (like Windows)
+  return buffer.toString('utf-16le', start, start + length);
 }
 
 export function packDouble(value: number): Buffer {

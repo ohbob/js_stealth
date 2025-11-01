@@ -5,14 +5,20 @@
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch"
+    "build": "tsc && npm run copy-types",
+    "postbuild": "npm run copy-types",
+    "copy-types": "mkdir -p dist/types && cp src/types/global.d.ts dist/types/global.d.ts",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/node": "^24.9.2",
     "typescript": "^5.9.3"
   },
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    }
   }
 }

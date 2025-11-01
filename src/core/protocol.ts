@@ -1,6 +1,7 @@
 import { packUInt32, packUInt16, unpackUInt32, unpackUInt16 } from './datatypes.js';
 import { EventEmitter } from 'events';
 import type { Socket } from 'net';
+import { EVENTS } from '../constants.js';
 
 const VERSION = [2, 7, 0, 0];
 const PACKET_TYPE_RESULT = 1;
@@ -9,20 +10,7 @@ const PACKET_TYPE_PAUSE = 4;
 const PACKET_TYPE_EVENT = 6;
 const PACKET_TYPE_REQ_SCRIPT_PATH = 9;
 
-const EVENTS_NAMES = [
-  'eviteminfo', 'evitemdeleted', 'evspeech', 'evdrawgameplayer',
-  'evmoverejection', 'evdrawcontainer', 'evadditemtocontainer',
-  'evaddmultipleitemsincont', 'evrejectmoveitem', 'evupdatechar',
-  'evdrawobject', 'evmenu', 'evmapmessage', 'evallowrefuseattack',
-  'evclilocspeech', 'evclilocspeechaffix', 'evunicodespeech',
-  'evbuffdebuffsystem', 'evclientsendresync', 'evcharanimation',
-  'evicqdisconnect', 'evicqconnect', 'evicqincomingtext', 'evicqerror',
-  'evincominggump', 'evtimer1', 'evtimer2', 'evwindowsmessage', 'evsound',
-  'evdeath', 'evquestarrow', 'evpartyinvite', 'evmappin', 'evgumptextentry',
-  'evgraphicaleffect', 'evircincomingtext', 'evmessengerevent',
-  'evsetglobalvar', 'evupdateobjstats', 'evglobalchat', 'evwardamage',
-  'evcontextmenu'
-] as const;
+const EVENTS_NAMES = EVENTS;
 
 interface PendingPromise {
   resolve: (value: Buffer) => void;
@@ -92,12 +80,6 @@ export class Protocol extends EventEmitter {
     return id;
   }
 
-  sendMethodAsync(methodIndex: number, argData: Buffer): () => Promise<Buffer> {
-    const id = this.methodId();
-    this.sendPacket(PACKET_TYPE_RESULT, methodIndex, id, argData);
-    return () => this.waitForResult(id);
-  }
-
   private _onData(data: Buffer): void {
     this._buffer = Buffer.concat([this._buffer, data]);
     this._parseBuffer();
@@ -165,7 +147,7 @@ export class Protocol extends EventEmitter {
     this.emit(EVENTS_NAMES[eventIndex] || `event${eventIndex}`, data);
   }
 
-  async waitForResult(id: number, timeout: number = 30000): Promise<Buffer> {
+  async waitForResult(id: number, timeout: number = 1500): Promise<Buffer> {
     if (this.results.has(id)) {
       const result = this.results.get(id)!;
       this.results.delete(id);

@@ -5,14 +5,12 @@ const HOST = 'localhost';
 const PORT = 47602;
 const VERSION = [2, 7, 0, 0];
 const GET_PORT_ATTEMPT_COUNT = 5;
-const SOCK_TIMEOUT = 30000; // 30 seconds
+const SOCK_TIMEOUT = 5000; // 5 seconds
 export async function discoverPort(host = HOST) {
-    console.log(`Attempting port discovery on ${host}:${PORT}...`);
     for (let attempt = 0; attempt < GET_PORT_ATTEMPT_COUNT; attempt++) {
         try {
             const port = await attemptPortDiscovery(host, attempt + 1);
             if (port) {
-                console.log(`Port discovered: ${port}`);
                 return port;
             }
         }
@@ -28,7 +26,7 @@ export async function discoverPort(host = HOST) {
 function attemptPortDiscovery(host, attemptNum) {
     return new Promise((resolve, reject) => {
         const sock = net.createConnection(PORT, host);
-        sock.setTimeout(5000);
+        sock.setTimeout(2000); // 2 seconds for port discovery
         let buffer = Buffer.alloc(0);
         const startTime = Date.now();
         const timeout = SOCK_TIMEOUT;
