@@ -1,0 +1,118 @@
+// TypeScript definitions for js_stealth
+
+export interface Config {
+  HOST: string;
+  PORT: number | null;
+}
+
+/**
+ * Connect to Stealth client
+ * @param host - Host address (default: 'localhost')
+ * @param port - Port number (default: auto-discover)
+ */
+export function connect(host?: string | null, port?: number | null): Promise<void>;
+
+/**
+ * Disconnect from Stealth client
+ */
+export function disconnect(): Promise<void>;
+
+/**
+ * Register event handler
+ * @param event - Event name
+ * @param callback - Event callback function
+ */
+export function on(event: string, callback: (...args: any[]) => void): void;
+
+/**
+ * Get self character ID
+ * @returns Character ID
+ */
+export function Self(): Promise<number>;
+
+/**
+ * Get X coordinate of object
+ * @param objId - Object ID
+ * @returns X coordinate
+ */
+export function GetX(objId: number): Promise<number>;
+
+/**
+ * Get Y coordinate of object
+ * @param objId - Object ID
+ * @returns Y coordinate
+ */
+export function GetY(objId: number): Promise<number>;
+
+/**
+ * Get Z coordinate of object
+ * @param objId - Object ID
+ * @returns Z coordinate
+ */
+export function GetZ(objId: number): Promise<number>;
+
+// ... (all other exports from the compiled index.d.ts)
+
+// Global declarations - automatically available when importing this module
+// This makes GetX(), Self(), etc. work globally without stealth. prefix
+declare global {
+  // Connection
+  function connect(host?: string | null, port?: number | null): Promise<void>;
+  function disconnect(): Promise<void>;
+  function on(event: string, callback: (...args: any[]) => void): void;
+
+  // Basic
+  function Self(): Promise<number>;
+  function GetX(objId: number): Promise<number>;
+  function GetY(objId: number): Promise<number>;
+  function GetZ(objId: number): Promise<number>;
+  function GetType(objId: number): Promise<number>;
+  function GetName(objId: number): Promise<string>;
+  function GetHP(objId: number): Promise<number>;
+  function GetMana(objId: number): Promise<number>;
+  function GetStam(objId: number): Promise<number>;
+  function GetQuantity(objId: number): Promise<number>;
+  function GetDistance(objId: number): Promise<number>;
+  function GetColor(objId: number): Promise<number>;
+  function ClickOnObject(objId: number): Promise<void>;
+  function Wait(ms: number): Promise<void>;
+  function Str(): Promise<number>;
+  function Int(): Promise<number>;
+  function Dex(): Promise<number>;
+  function HP(): Promise<number>;
+  function Mana(): Promise<number>;
+  function Stam(): Promise<number>;
+  function Connected(): Promise<boolean>;
+  function Ground(): number;
+  function SetFindDistance(value: number): Promise<void>;
+  function FindType(objType: number, container?: number | null): Promise<number[]>;
+  function FindTypeEx(objType: number, color: number, container?: number, inSub?: boolean): Promise<number[]>;
+  function GetFindedList(): Promise<number[]>;
+
+  // Parallel
+  function parallel(commands: Array<[Function, ...any[]] | Function | Promise<any>>, numConnections?: number): Promise<any[]>;
+  function parallel_items(items: number[], operations: Function[], numConnections?: number): Promise<Array<{ id: number; data: any[] }>>;
+
+  // Movement
+  function MoveXY(x: number, y: number, accuracyXY: number, running: boolean, exact?: boolean): Promise<boolean>;
+  function MoveXYZ(x: number, y: number, z: number, accuracyXY: number, accuracyZ: number, running: boolean): Promise<boolean>;
+  function newMoveXY(x: number, y: number, optimized: number, accuracy: number, running: boolean): Promise<boolean>;
+  function newMoveXYZ(x: number, y: number, z: number, accuracyXY: number, accuracyZ: number, running: boolean, callback?: Function): Promise<boolean>;
+
+  // Spells
+  function Cast(spellName: string, objId?: number | null): Promise<boolean>;
+  function CastToObj(spellName: string, objId: number): Promise<boolean>;
+  function CastToSelf(spellName: string): Promise<boolean>;
+  function CastSelf(spellName: string): Promise<boolean>;
+
+  // Skills
+  function UseSkill(skillNameOrId: string | number): Promise<boolean>;
+  function GetSkillValue(skillNameOrId: string | number): Promise<number>;
+  function GetSkillCap(skillNameOrId: string | number): Promise<number>;
+
+  // Config
+  const config: Config;
+}
+
+// This export makes it a module, allowing declare global to work
+export {};
