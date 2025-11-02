@@ -386,6 +386,7 @@ export async function Find(options) {
   // Cleanup: Close excess connections after Find completes (async, don't block)
   // This prevents connection pool from growing indefinitely and causing timeouts
   // Run cleanup asynchronously so it doesn't slow down the return
+  // Note: We keep a reasonable pool (up to 16) to avoid having to recreate connections on subsequent calls
   Promise.resolve().then(async () => {
     try {
       // Use cached getter if available, otherwise import
@@ -410,9 +411,11 @@ export async function Find(options) {
         }
       }
       
-      // Keep only a small pool (2-4 connections) for future use to prevent overwhelming Stealth
-      const keepConnections = Math.min(4, Math.max(2, numConnections));
-      if (connectionPool.length > keepConnections) {
+      // Keep a reasonable pool size (match numConnections, max 16) for future use
+      // This prevents having to recreate connections on subsequent calls, which causes 3s delays
+      // Only trim if we have significantly more than needed (e.g., >20 when we only need 16)
+      const keepConnections = Math.min(16, Math.max(8, numConnections));
+      if (connectionPool.length > 20) {
         const excess = connectionPool.splice(keepConnections);
         for (const conn of excess) {
           try {
