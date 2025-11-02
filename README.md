@@ -1245,7 +1245,7 @@ import './js_stealth';
 await WearItem(LAYERS.Rhand, weaponId);
 await Step(DIRECTIONS.North, false);
 const innocents = await FindNotoriety(0x0190, NOTORIETY.Innocent);
-on(EVENTS[2], (data) => { // 'evspeech'
+on("evspeech", (data) => { // 'evspeech'
   console.log('Speech event:', data);
 });
 
