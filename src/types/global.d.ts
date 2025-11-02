@@ -52,7 +52,7 @@ declare global {
   // Connection
   function connect(host?: string | null, port?: number | null): Promise<void>;
   function disconnect(): Promise<void>;
-  function on(event: EventName, callback: (...args: any[]) => void): void;
+  function on(event: EventName, callback: (...args: any[]) => void): Promise<void>;
 
   // Basic
   function Self(): Promise<number>;
@@ -160,10 +160,10 @@ declare global {
           containers?: Array<number | Promise<number>>; // e.g., [0, Ground(), Backpack()] - numbers, hex, or promises (auto-awaited)
           container?: number | Promise<number>; // e.g., 0, Ground(), or Backpack() - number, hex, or promise (auto-awaited)
           inSub?: boolean;
-          operations: Function[];
+          operations?: Function[]; // Optional - if omitted or empty, returns objects with just { id } properties
           keys?: string[];
           numConnections?: number;
-          filters?: ((item: { id: number; [key: string]: any }) => boolean) | Array<(item: { id: number; [key: string]: any }) => boolean>; // Filter functions applied after getting properties
+          filters?: ((item: { id: number; [key: string]: any }) => boolean) | Array<(item: { id: number; [key: string]: any }) => boolean>; // Filter functions applied after getting properties (works even with empty operations)
         }): Promise<Array<{ id: number; [key: string]: any }>>;
 
   // Movement

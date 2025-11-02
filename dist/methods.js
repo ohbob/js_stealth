@@ -56,7 +56,9 @@ class ScriptMethod {
             const id = this.protocol.sendMethod(this.methodIndex, argData, true);
             // Return a function that waits for the result
             // Keep original timeout - parallel operations should still be fast if Stealth responds quickly
-            return () => this.protocol.waitForResult(id, 1500).then(result => this.returnType(result, 0));
+            // Increased timeout to 3000ms to handle operations that may take longer when running in parallel
+            // This prevents GetNotoriety and other methods from timing out on valid creatures
+            return () => this.protocol.waitForResult(id, 3000).then(result => this.returnType(result, 0));
         }
         else {
             this.protocol.sendMethod(this.methodIndex, argData, false);
@@ -89,6 +91,7 @@ export function createMethods(protocol) {
         GetMaxStam: new ScriptMethod(protocol, METHOD_INDICES.GetMaxStam, [packUInt32], (buf) => unpackInt16(buf)),
         GetPrice: new ScriptMethod(protocol, METHOD_INDICES.GetPrice, [packUInt32], (buf) => unpackUInt32(buf)),
         GetDirection: new ScriptMethod(protocol, METHOD_INDICES.GetDirection, [packUInt32], (buf) => unpackUInt8(buf)),
+        GetNotoriety: new ScriptMethod(protocol, METHOD_INDICES.GetNotoriety, [packUInt32], (buf) => unpackUInt8(buf)),
         IsObjectExists: new ScriptMethod(protocol, METHOD_INDICES.IsObjectExists, [packUInt32], (buf) => unpackBool(buf)),
         PredictedX: new ScriptMethod(protocol, METHOD_INDICES.PredictedX, [], (buf) => unpackUInt16(buf)),
         PredictedY: new ScriptMethod(protocol, METHOD_INDICES.PredictedY, [], (buf) => unpackUInt16(buf)),

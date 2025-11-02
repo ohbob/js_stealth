@@ -413,6 +413,7 @@ export declare function createMethods(protocol: any): {
         GetMaxStam: ScriptMethod;
         GetPrice: ScriptMethod;
         GetDirection: ScriptMethod;
+        GetNotoriety: ScriptMethod;
         IsObjectExists: ScriptMethod;
         PredictedX: ScriptMethod;
         PredictedY: ScriptMethod;

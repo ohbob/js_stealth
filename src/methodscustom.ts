@@ -91,11 +91,17 @@ async function parallelInternal(commands, numConnections = 16) {
     if (Array.isArray(cmd)) {
       const [fn, ...args] = cmd;
       // Direct access to instances - faster!
-      const instance = conn._instances[(fn as any)._methodName || fn.name];
+      const methodName = (fn as any)._methodName || fn.name;
+      const instance = conn._instances[methodName];
       if (instance?.send) {
         // Send NOW - synchronous call that queues packet in socket buffer
         waitFunctions.push({ wait: instance.send(...args), index });
       } else {
+        // Method not in instances - log warning for debugging
+        if (!instance && methodName && index < 10) {
+          // Only log first few to avoid spam
+          console.warn(`Method ${methodName} not found in _instances, using fallback. Available:`, Object.keys(conn._instances).slice(0, 10).join(', '));
+        }
         // Fallback: execute as promise
         waitFunctions.push({ wait: () => fn(...args), index });
       }
@@ -109,15 +115,35 @@ async function parallelInternal(commands, numConnections = 16) {
   }
   
   // At this point, ALL requests are queued in socket buffers
-  // Step 3: Wait for ALL results in parallel (fast path - minimal error handling overhead)
+  // Step 3: Wait for ALL results in parallel - handle errors gracefully
+  // Use Promise.allSettled so individual failures don't crash the batch
   // Bun's event loop will process all socket I/O concurrently
-  // Direct Promise.all for maximum speed - no error handling wrapper overhead
-  const allPromises = waitFunctions.map(({ wait, index }) => wait().then(result => ({ success: true, result, index })));
+  const allPromises = waitFunctions.map(({ wait, index }) => 
+    wait()
+      .then(result => ({ success: true, result, index, error: null }))
+      .catch(error => {
+        // Log warning but don't crash - return null for failed operations
+        // This allows methods like GetNotoriety to fail on invalid objects (e.g., items instead of creatures)
+        const errorMsg = error?.message || String(error);
+        if (errorMsg.includes('timeout') || errorMsg.includes('Method')) {
+          // Log first few failures for debugging
+          const cmd = commands[index];
+          if (Array.isArray(cmd) && index < 10) {
+            const methodName = (cmd[0] as any)?._methodName || cmd[0]?.name || 'unknown';
+            console.warn(`Operation ${methodName} timed out at index ${index}:`, errorMsg.substring(0, 50));
+          }
+          // Silent failure for timeout/error - return null
+          return { success: false, result: null, index, error: null };
+        }
+        // Other errors - still return null but log
+        return { success: false, result: null, index, error: null };
+      })
+  );
   
-  // Wait for all commands to complete (fast path - let errors propagate naturally)
+  // Wait for all commands to complete (errors are handled, won't crash)
   const allIndexedResults = await Promise.all(allPromises);
   
-  // Return results in order (simple and fast)
+  // Return results in order - null for failed operations
   return allIndexedResults
     .sort((a, b) => a.index - b.index)
     .map(r => r.result);
@@ -255,8 +281,8 @@ export async function Find(options) {
     [objTypes, colors, containers, inSub, operations, keys = null, numConnections = 16] = arguments;
   }
   
-  if (!objTypes || !operations) {
-    throw new Error('Find requires objTypes and operations');
+  if (!objTypes) {
+    throw new Error('Find requires objTypes');
   }
   
   // Ensure arrays (safety check for legacy API)
@@ -282,6 +308,31 @@ export async function Find(options) {
   
   if (!items || items.length === 0) {
     return [];
+  }
+  
+  // If no operations provided, just return objects with IDs
+  if (!operations || operations.length === 0) {
+    let results = items.map(id => ({ id }));
+    
+    // Apply filters if provided (even with no operations)
+    if (filters) {
+      const filterFunctions = Array.isArray(filters) ? filters : [filters];
+      results = results.filter((item) => {
+        return filterFunctions.every((filterFn) => {
+          if (typeof filterFn !== 'function') {
+            throw new Error('Filter must be a function that takes an item and returns boolean');
+          }
+          try {
+            return filterFn(item) === true;
+          } catch (error) {
+            console.warn(`Filter error for item ${item.id}: ${error.message}`);
+            return false;
+          }
+        });
+      });
+    }
+    
+    return results;
   }
   
   // If no keys provided, derive from function names

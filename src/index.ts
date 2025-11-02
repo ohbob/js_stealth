@@ -181,9 +181,35 @@ function setupAutoDisconnect() {
   });
 }
 
-export function on(event, callback) {
-  if (protocol) {
-    protocol.on(event, callback);
+export async function on(event, callback) {
+  // Find event index
+  const eventIndex = EVENTS.indexOf(event);
+  if (eventIndex === -1) {
+    throw new Error(`Unknown event "${event}". Available events: ${EVENTS.join(', ')}`);
+  }
+  
+  // Ensure connection is established before registering events
+  await ensureConnected();
+  
+  // Store callback in protocol.callbacks Map (matching Python behavior)
+  const hadCallback = protocol.callbacks.has(eventIndex);
+  protocol.callbacks.set(eventIndex, callback);
+  
+  // Also register on EventEmitter for convenience
+  protocol.on(event, callback);
+  
+  // Tell Stealth to send events for this index (only if no callback was registered before)
+  // This matches Python's behavior: only call SetEventProc if conn.callbacks[index] was None
+  if (!hadCallback) {
+    try {
+      await methods.SetEventProc(eventIndex);
+      console.log(`Event ${event} (index ${eventIndex}) registered successfully`);
+    } catch (err) {
+      console.error(`Failed to register event ${event} (index ${eventIndex}):`, err);
+      throw err;
+    }
+  } else {
+    console.log(`Event ${event} (index ${eventIndex}) callback updated (already registered with Stealth)`);
   }
 }
 
@@ -902,7 +928,7 @@ function createAutoAwaitedExports() {
     WaitTargetSelf, WaitTargetLast, CancelWaitTarget,
     LastTarget, LastAttack, LastContainer, LastObject,
     PredictedX, PredictedY, PredictedZ,
-    GetFindDistance, FindAtCoord, FindItem, FindCount, FindFullQuantity, Ignore, IgnoreOff,
+    GetFindDistance, GetFindVertical, SetFindVertical, FindAtCoord, FindItem, FindCount, FindFullQuantity, Ignore, IgnoreOff,
     IgnoreReset, GetIgnoreList,
     InJournal, LastJournalMessage, Journal, LowJournal, HighJournal,
     ClearJournal, AddToSystemJournal,

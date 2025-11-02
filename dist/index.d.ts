@@ -3,7 +3,7 @@ export { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDI
 export type { Layer, Direction, DirectionValue, Notoriety, SpellName, SkillName, EventName } from './constants.js';
 export declare function ensureConnected(): Promise<any>;
 export declare function connect(host?: any, port?: any): Promise<void>;
-export declare function on(event: any, callback: any): void;
+export declare function on(event: any, callback: any): Promise<void>;
 export declare function disconnect(): Promise<void>;
 export declare const Self: {
     (...args: any[]): Promise<any>;

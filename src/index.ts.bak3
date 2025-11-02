@@ -1,0 +1,1002 @@
+/// <reference path="./types/global.d.ts" />
+// @ts-nocheck - Large file, types added incrementally
+import { connect as connectToStealth } from './core/connection.js';
+import { createMethods } from './methods.js';
+import type { Protocol } from './core/protocol.js';
+// Import and export all constants from constants file
+import { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId } from './constants.js';
+export { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId };
+export type { Layer, Direction, DirectionValue, Notoriety, SpellName, SkillName, EventName } from './constants.js';
+
+
+// Global connection state (like py_stealth module-level)
+let protocol = null;
+let methods = null;
+let methodsRaw = null; // Raw methods object for batch operations
+let HOST = 'localhost';
+let PORT = null;
+let connecting = false; // Track if we're currently connecting
+let connectPromise = null; // Cache connection promise
+
+// Connection pool for parallel operations (reused across calls)
+let connectionPool = [];
+
+// Auto-connect helper - called automatically on first method use
+export async function ensureConnected() {
+  if (protocol && methods) {
+    return; // Already connected
+  }
+  if (connecting && connectPromise) {
+    return connectPromise; // Wait for existing connection attempt
+  }
+  connecting = true;
+  // Use current HOST/PORT (which may have been set via config)
+  connectPromise = connect(null, null);
+  try {
+    await connectPromise;
+    // Verify connection is actually ready by checking socket state
+    if (!protocol || !protocol.socket || protocol.socket.destroyed || !protocol.socket.writable) {
+      throw new Error('Connection established but socket is not writable');
+    }
+  } catch (error) {
+    connecting = false;
+    connectPromise = null;
+    // Re-throw with better error message
+    const host = HOST || 'localhost';
+    const port = PORT || 'auto-discovered';
+    const errorMsg = (error && error.message) ? error.message : String(error || 'Unknown error');
+    
+    // Check for timeout errors (from port discovery or connection) - case insensitive
+    // Port discovery errors: "Socket timeout", "Connection timeout", "Response timeout"
+    const lowerMsg = errorMsg.toLowerCase();
+    if (lowerMsg.includes('timeout') || lowerMsg.includes('timed out')) {
+      throw new Error(`Connection timeout to ${host}:${port} - is Stealth running on ${host}?`);
+    }
+    
+    // Check for connection refused errors
+    if (lowerMsg.includes('econnrefused') || 
+        lowerMsg.includes('refused') ||
+        lowerMsg.includes('connection refused')) {
+      throw new Error(`Connection refused to ${host}:${port} - is Stealth running on ${host}?`);
+    }
+    
+    // Generic connection error - pass through the original message
+    throw new Error(`Connection failed to ${host}:${port}: ${errorMsg}`);
+  } finally {
+    connecting = false;
+    connectPromise = null;
+  }
+}
+
+export async function connect(host = null, port = null) {
+  // If already connected, just return
+  if (protocol && methods) {
+    return;
+  }
+  
+  // Use provided host/port, or fall back to module-level HOST/PORT (which can be set via config)
+  const connectHost = host !== null ? host : HOST;
+  let connectPort = port !== null ? port : PORT;
+  
+  // If port is null, discover it
+  if (connectPort === null) {
+    const { discoverPort } = await import('./core/connection.js');
+    connectPort = await discoverPort(connectHost);
+  }
+  
+  protocol = await connectToStealth(connectHost, connectPort);
+  methodsRaw = createMethods(protocol);
+  methods = methodsRaw;
+  
+  // Store HOST/PORT for connection pooling (now we know the port!)
+  if (host !== null) HOST = host;
+  PORT = connectPort; // Store discovered port for reuse
+  
+  // Events are now registered directly in on() with ensureConnected(), no setup needed here
+  
+  // Setup auto-disconnect on process exit
+  setupAutoDisconnect();
+}
+
+let autoDisconnectSetup = false;
+
+function setupAutoDisconnect() {
+  // Only setup once
+  if (autoDisconnectSetup) {
+    return;
+  }
+  autoDisconnectSetup = true;
+  
+  // Auto-disconnect when event loop is about to be empty
+  // The 'beforeExit' event fires when Node.js would exit if there were no more work
+  // Open sockets keep the event loop alive, so we disconnect them first
+  let isDisconnecting = false;
+  process.on('beforeExit', (code) => {
+    // Only disconnect if we're connected and not already disconnecting
+    if (!isDisconnecting && protocol && protocol.socket && !protocol.socket.destroyed) {
+      isDisconnecting = true;
+      // Disconnect and then exit
+      disconnect()
+        .then(() => {
+          isDisconnecting = false;
+          // After disconnect, exit immediately
+          process.exit(code || 0);
+        })
+        .catch((e) => {
+          isDisconnecting = false;
+          // If disconnect fails, force exit anyway
+          process.exit(code || 0);
+        });
+    } else {
+      // No connection or already disconnecting, safe to exit
+      process.exit(code || 0);
+    }
+  });
+  
+  // Handle signals
+  process.once('SIGINT', () => {
+    disconnect().then(() => process.exit(0)).catch(() => process.exit(1));
+  });
+  process.once('SIGTERM', () => {
+    disconnect().then(() => process.exit(0)).catch(() => process.exit(1));
+  });
+  
+  // Handle errors gracefully
+  process.once('uncaughtException', async (error) => {
+    const errorMsg = error.message || String(error);
+    // Connection errors from ensureConnected have good messages - show them directly
+    if (errorMsg.includes('Connection timeout') || 
+        errorMsg.includes('Connection refused') || 
+        errorMsg.includes('Connection failed to')) {
+      console.error(errorMsg);
+    } else if (errorMsg.includes('Timeout') || errorMsg.includes('Connection')) {
+      console.error('Connection error:', errorMsg);
+    } else {
+      console.error('Uncaught exception:', errorMsg);
+    }
+    try {
+      await disconnect();
+    } catch (e) {
+      // Ignore disconnect errors
+    }
+    process.exit(1);
+  });
+  
+  process.once('unhandledRejection', async (reason) => {
+    const errorMsg = reason instanceof Error ? reason.message : String(reason);
+    // Connection errors from ensureConnected have good messages - show them directly
+    if (errorMsg.includes('Connection timeout') || 
+        errorMsg.includes('Connection refused') || 
+        errorMsg.includes('Connection failed to')) {
+      console.error(errorMsg);
+    } else if (errorMsg.includes('Timeout') || errorMsg.includes('Connection')) {
+      console.error('Connection error:', errorMsg);
+    } else {
+      console.error('Unhandled rejection:', errorMsg);
+    }
+    try {
+      await disconnect();
+    } catch (e) {
+      // Ignore disconnect errors
+    }
+    process.exit(1);
+  });
+}
+
+export async function on(event, callback) {
+  // Find event index
+  const eventIndex = EVENTS.indexOf(event);
+  if (eventIndex === -1) {
+    throw new Error(`Unknown event "${event}". Available events: ${EVENTS.join(', ')}`);
+  }
+  
+  // Ensure connection is established before registering events
+  await ensureConnected();
+  
+  // Store callback in protocol.callbacks Map (matching Python behavior)
+  const hadCallback = protocol.callbacks.has(eventIndex);
+  protocol.callbacks.set(eventIndex, callback);
+  
+  // Also register on EventEmitter for convenience
+  protocol.on(event, callback);
+  
+  // Tell Stealth to send events for this index (only if no callback was registered before)
+  // This matches Python's behavior: only call SetEventProc if conn.callbacks[index] was None
+  if (!hadCallback) {
+    try {
+      await methods.SetEventProc(eventIndex);
+      console.log(`Event ${event} (index ${eventIndex}) registered successfully`);
+    } catch (err) {
+      console.error(`Failed to register event ${event} (index ${eventIndex}):`, err);
+      throw err;
+    }
+  } else {
+    console.log(`Event ${event} (index ${eventIndex}) callback updated (already registered with Stealth)`);
+  }
+}
+
+// Note: Event registrations are now handled directly in on() with ensureConnected()
+// No need for pending registrations queue since on() ensures connection first
+
+export async function disconnect() {
+  if (protocol && protocol.socket) {
+    // Clear all pending timeouts first
+    if (protocol.pendingPromises) {
+      for (const [id, promise] of protocol.pendingPromises) {
+        if (promise.timeout) {
+          clearTimeout(promise.timeout);
+        }
+      }
+      protocol.pendingPromises.clear();
+    }
+    // Remove all listeners before destroying
+    protocol.socket.removeAllListeners();
+    protocol.removeAllListeners();
+    // Ensure socket is fully closed
+    if (!protocol.socket.destroyed) {
+      try {
+        protocol.socket.end();
+      } catch (e) {
+        // Ignore end errors
+      }
+      try {
+        protocol.socket.destroy();
+      } catch (e) {
+        // Ignore destroy errors
+      }
+    }
+    protocol = null;
+    methods = null;
+    methodsRaw = null;
+  }
+  // Also close connection pool
+  await closeConnectionPool();
+}
+
+// Wrapper helper for all methods - auto-connects if needed
+function withAutoConnect(fn, methodName?: string) {
+  const wrapped = async (...args) => {
+    try {
+      await ensureConnected();
+      // Re-get methods in case they weren't available when wrapper was created
+      if (!methods || !protocol) {
+        throw new Error('Connection failed - methods not available. Is Stealth running?');
+      }
+      // Small delay after connection to ensure handshake is processed
+      if (protocol && protocol.socket && protocol.socket.readyState === 'open') {
+        // Connection is ready, proceed
+      }
+      return await fn(...args);
+    } catch (error) {
+      const errorMsg = (error && error.message) ? error.message : String(error || '');
+      const lowerMsg = errorMsg.toLowerCase();
+      
+      // Connection errors from ensureConnected already have good messages - pass them through
+      // MUST check these FIRST before generic "Timeout" check
+      if (lowerMsg.includes('connection timeout') || 
+          lowerMsg.includes('connection refused') || 
+          lowerMsg.includes('connection failed to')) {
+        throw error; // Already a connection error with good message
+      }
+      
+      // Method timeout errors - the connection worked but method call timed out waiting for response
+      if (lowerMsg.includes('timeout waiting for result') || 
+          lowerMsg.includes('timeout in')) {
+        const name = methodName || fn.name || 'method';
+        // Check if connection is still alive
+        const isConnected = protocol && methods && protocol.socket && !protocol.socket.destroyed && protocol.socket.writable;
+        if (!isConnected) {
+          throw new Error(`Connection lost during ${name} - Stealth may have disconnected`);
+        }
+        throw new Error(`Method ${name} timed out waiting for response from Stealth - check if Stealth is processing the request`);
+      }
+      
+      if (lowerMsg.includes('closed')) {
+        const name = methodName || fn.name || 'method';
+        throw new Error(`Connection closed during ${name}: ${errorMsg}`);
+      }
+      throw error;
+    }
+  };
+  // Preserve method name for parallel execution
+  // Use explicit name if provided, otherwise try fn.name
+  wrapped._methodName = methodName || fn.name;
+  return wrapped;
+}
+
+// Export all methods directly (like py_stealth's from py_stealth import *)
+// All methods auto-connect on first use
+// Each export automatically registers itself - single source of truth!
+export const Self = registerExport('Self', withAutoConnect(async function() { return methods.Self(); }, 'Self'));
+export const GetX = registerExport('GetX', withAutoConnect(async function(objId) { return methods.GetX(objId); }, 'GetX'));
+export const GetY = registerExport('GetY', withAutoConnect(async function(objId) { return methods.GetY(objId); }, 'GetY');
+export const GetZ = registerExport('GetZ', withAutoConnect(async function(objId) { return methods.GetZ(objId); }, 'GetZ');
+export const GetType = registerExport('GetType', withAutoConnect(async function(objId) { return methods.GetType(objId); }, 'GetType');
+export const GetName = registerExport('GetName', withAutoConnect(async function(objId) { return methods.GetName(objId); }, 'GetName');
+export const GetHP = registerExport('GetHP', withAutoConnect(async function(objId) { return methods.GetHP(objId); }, 'GetHP');
+export const GetMana = registerExport('GetMana', withAutoConnect(async function(objId) { return methods.GetMana(objId); }, 'GetMana');
+export const GetStam = registerExport('GetStam', withAutoConnect(async function(objId) { return methods.GetStam(objId); }, 'GetStam');
+export const GetQuantity = registerExport('GetQuantity', withAutoConnect(async function(objId) { return methods.GetQuantity(objId); }, 'GetQuantity');
+export const GetDistance = registerExport('GetDistance', withAutoConnect(async function(objId) { return methods.GetDistance(objId); }, 'GetDistance');
+export const GetColor = registerExport('GetColor', withAutoConnect(async function(objId) { return methods.GetColor(objId); }, 'GetColor');
+export const ClickOnObject = registerExport('ClickOnObject', withAutoConnect(async function(objId) { return methods.ClickOnObject(objId); });
+export const Wait = registerExport('Wait', withAutoConnect(async function(ms) { return methods.Wait(ms); }, 'Wait');
+export const Str = registerExport('Str', withAutoConnect(async function() { return methods.Str(); });
+export const Int = registerExport('Int', withAutoConnect(async function() { return methods.Int(); });
+export const Dex = registerExport('Dex', withAutoConnect(async function() { return methods.Dex(); });
+export const HP = registerExport('HP', withAutoConnect(async function() { return methods.HP(); });
+export const Mana = registerExport('Mana', withAutoConnect(async function() { return methods.Mana(); });
+export const Stam = registerExport('Stam', withAutoConnect(async function() { return methods.Stam(); });
+export const Connected = registerExport('Connected', withAutoConnect(async function() { return methods.Connected(); });
+export function Ground() { return 0; } // Returns 0 directly, no connection needed (matches Python)
+export const SetFindDistance = registerExport('SetFindDistance', withAutoConnect(async function(value) { return methods.SetFindDistance(value); }, 'SetFindDistance');
+export const FindType = registerExport('FindType', withAutoConnect(async function(objType, container = null) {
+  await methods.FindType(objType, container);
+  return methods.GetFindedList();
+});
+export const FindTypeEx = registerExport('FindTypeEx', withAutoConnect(async function(objType, color, container = 0, inSub = true) {
+  await methods.FindTypeEx(objType, color, container, inSub);
+  return methods.GetFindedList();
+});
+export const GetFindedList = registerExport('GetFindedList', withAutoConnect(async function() { return methods.GetFindedList(); });
+
+// Additional object methods
+export const GetAltName = registerExport('GetAltName', withAutoConnect(async (objId) => { return methods.GetAltName(objId); });
+export const GetTitle = registerExport('GetTitle', withAutoConnect(async (objId) => { return methods.GetTitle(objId); });
+export const GetTooltip = registerExport('GetTooltip', withAutoConnect(async (objId) => { return methods.GetTooltip(objId); });
+export const GetStr = registerExport('GetStr', withAutoConnect(async (objId) => { return methods.GetStr(objId); });
+export const GetInt = registerExport('GetInt', withAutoConnect(async (objId) => { return methods.GetInt(objId); });
+export const GetDex = registerExport('GetDex', withAutoConnect(async (objId) => { return methods.GetDex(objId); });
+export const GetMaxHP = registerExport('GetMaxHP', withAutoConnect(async (objId) => { return methods.GetMaxHP(objId); });
+export const GetMaxMana = registerExport('GetMaxMana', withAutoConnect(async (objId) => { return methods.GetMaxMana(objId); });
+export const GetMaxStam = registerExport('GetMaxStam', withAutoConnect(async (objId) => { return methods.GetMaxStam(objId); });
+export const GetPrice = registerExport('GetPrice', withAutoConnect(async (objId) => { return methods.GetPrice(objId); });
+export const GetDirection = registerExport('GetDirection', withAutoConnect(async (objId) => { return methods.GetDirection(objId); });
+export const IsObjectExists = registerExport('IsObjectExists', withAutoConnect(async (objId) => { return methods.IsObjectExists(objId); });
+
+// Actions
+export const UseObject = registerExport('UseObject', withAutoConnect(async (objId) => { return methods.UseObject(objId); });
+export const UseType = registerExport('UseType', withAutoConnect(async (objType, color) => { return methods.UseType(objType, color); });
+export const UseFromGround = registerExport('UseFromGround', withAutoConnect(async (objType, color) => { return methods.UseFromGround(objType, color); });
+export const Attack = registerExport('Attack', withAutoConnect(async (objId) => { return methods.Attack(objId); });
+
+// Self stats
+export const MaxHP = registerExport('MaxHP', withAutoConnect(async () => { return methods.MaxHP(); });
+export const MaxMana = registerExport('MaxMana', withAutoConnect(async () => { return methods.MaxMana(); });
+export const MaxStam = registerExport('MaxStam', withAutoConnect(async () => { return methods.MaxStam(); });
+export const Gold = registerExport('Gold', withAutoConnect(async () => { return methods.Gold(); });
+export const Weight = registerExport('Weight', withAutoConnect(async () => { return methods.Weight(); });
+export const MaxWeight = registerExport('MaxWeight', withAutoConnect(async () => { return methods.MaxWeight(); });
+export const Armor = registerExport('Armor', withAutoConnect(async () => { return methods.Armor(); });
+export const Luck = registerExport('Luck', withAutoConnect(async () => { return methods.Luck(); });
+export const Race = registerExport('Race', withAutoConnect(async () => { return methods.Race(); });
+export const Sex = registerExport('Sex', withAutoConnect(async () => { return methods.Sex(); });
+export const WorldNum = registerExport('WorldNum', withAutoConnect(async () => { return methods.WorldNum(); });
+export const CharName = registerExport('CharName', withAutoConnect(async () => { return methods.CharName(); });
+export const Backpack = registerExport('Backpack', withAutoConnect(async () => { return methods.Backpack(); });
+export const ShardName = registerExport('ShardName', withAutoConnect(async () => { return methods.ShardName(); });
+export const ProfileName = registerExport('ProfileName', withAutoConnect(async () => { return methods.ProfileName(); });
+
+// Status checks
+export const Hidden = registerExport('Hidden', withAutoConnect(async () => { return methods.Hidden(); });
+export const Poisoned = registerExport('Poisoned', withAutoConnect(async () => { return methods.Poisoned(); });
+export const Paralyzed = registerExport('Paralyzed', withAutoConnect(async () => { return methods.Paralyzed(); });
+export const Dead = registerExport('Dead', withAutoConnect(async () => { return methods.Dead(); });
+export const WarMode = registerExport('WarMode', withAutoConnect(async () => { return methods.WarMode(); });
+
+// Combat
+export const SetWarMode = registerExport('SetWarMode', withAutoConnect(async (value) => { return methods.SetWarMode(value); });
+export const WarTargetID = registerExport('WarTargetID', withAutoConnect(async () => { return methods.WarTargetID(); });
+
+// Targeting
+export const TargetID = registerExport('TargetID', withAutoConnect(async () => { return methods.TargetID(); });
+export const TargetPresent = registerExport('TargetPresent', withAutoConnect(async () => { return methods.TargetPresent(); });
+export const TargetCursor = registerExport('TargetCursor', withAutoConnect(async () => { return methods.TargetPresent(); }); // Alias
+export const WaitForTarget = registerExport('WaitForTarget', withAutoConnect(async (maxWaitTimeMS) => { return methods.WaitForTarget(maxWaitTimeMS); });
+export const CancelTarget = registerExport('CancelTarget', withAutoConnect(async () => { return methods.CancelTarget(); });
+export const TargetToObject = registerExport('TargetToObject', withAutoConnect(async (objId) => { return methods.TargetToObject(objId); });
+export const TargetToXYZ = registerExport('TargetToXYZ', withAutoConnect(async (x, y, z) => { return methods.TargetToXYZ(x, y, z); });
+export const WaitTargetObject = registerExport('WaitTargetObject', withAutoConnect(async (objId) => { return methods.WaitTargetObject(objId); });
+export const WaitTargetSelf = registerExport('WaitTargetSelf', withAutoConnect(async () => { return methods.WaitTargetSelf(); });
+export const WaitTargetLast = registerExport('WaitTargetLast', withAutoConnect(async () => { return methods.WaitTargetLast(); });
+export const CancelWaitTarget = registerExport('CancelWaitTarget', withAutoConnect(async () => { return methods.CancelWaitTarget(); });
+
+// Last actions
+export const LastTarget = registerExport('LastTarget', withAutoConnect(async () => { return methods.LastTarget(); });
+export const LastAttack = registerExport('LastAttack', withAutoConnect(async () => { return methods.LastAttack(); });
+export const LastContainer = registerExport('LastContainer', withAutoConnect(async () => { return methods.LastContainer(); });
+export const LastObject = registerExport('LastObject', withAutoConnect(async () => { return methods.LastObject(); });
+
+// Position
+export const PredictedX = registerExport('PredictedX', withAutoConnect(async () => { return methods.PredictedX(); });
+export const PredictedY = registerExport('PredictedY', withAutoConnect(async () => { return methods.PredictedY(); });
+export const PredictedZ = registerExport('PredictedZ', withAutoConnect(async () => { return methods.PredictedZ(); });
+
+// Finding
+export const GetFindDistance = registerExport('GetFindDistance', withAutoConnect(async () => { return methods.GetFindDistance(); });
+export const GetFindVertical = registerExport('GetFindVertical', withAutoConnect(async () => { return methods.GetFindVertical(); });
+export const SetFindVertical = registerExport('SetFindVertical', withAutoConnect(async (value) => { return methods.SetFindVertical(value); });
+export const FindNotoriety = registerExport('FindNotoriety', withAutoConnect(async (objType, notoriety) => { return methods.FindNotoriety(objType, notoriety); });
+export const FindAtCoord = registerExport('FindAtCoord', withAutoConnect(async (x, y) => { return methods.FindAtCoord(x, y); });
+export const FindItem = registerExport('FindItem', withAutoConnect(async () => { return methods.FindItem(); });
+export const FindCount = registerExport('FindCount', withAutoConnect(async () => { return methods.FindCount(); });
+export const FindFullQuantity = registerExport('FindFullQuantity', withAutoConnect(async (objId) => { return methods.FindFullQuantity(objId); });
+export const Ignore = registerExport('Ignore', withAutoConnect(async (objId) => { return methods.Ignore(objId); }, 'Ignore');
+export const IgnoreOff = registerExport('IgnoreOff', withAutoConnect(async (objId) => { return methods.IgnoreOff(objId); }, 'IgnoreOff');
+export const IgnoreReset = registerExport('IgnoreReset', withAutoConnect(async () => { return methods.IgnoreReset(); }, 'IgnoreReset');
+export const GetIgnoreList = registerExport('GetIgnoreList', withAutoConnect(async () => { return methods.GetIgnoreList(); });
+
+// Journal
+export const InJournal = registerExport('InJournal', withAutoConnect(async (text) => { return methods.InJournal(text); });
+export const LastJournalMessage = registerExport('LastJournalMessage', withAutoConnect(async () => { return methods.LastJournalMessage(); });
+export const Journal = registerExport('Journal', withAutoConnect(async (index) => { return methods.Journal(index); });
+export const LowJournal = registerExport('LowJournal', withAutoConnect(async () => { return methods.LowJournal(); });
+export const HighJournal = registerExport('HighJournal', withAutoConnect(async () => { return methods.HighJournal(); });
+export const ClearJournal = registerExport('ClearJournal', withAutoConnect(async () => { return methods.ClearJournal(); });
+export const AddToSystemJournal = registerExport('AddToSystemJournal', withAutoConnect(async (text) => { return methods.AddToSystemJournal(text); });
+
+// Skills
+export const UseSkill = registerExport('UseSkill', withAutoConnect(async (skillNameOrId) => { return methods.UseSkill(skillNameOrId); });
+export const UseSkillID = registerExport('UseSkillID', withAutoConnect(async (skillId) => { return methods.UseSkillID(skillId); });
+export const GetSkillValue = registerExport('GetSkillValue', withAutoConnect(async (skillNameOrId) => { return methods.GetSkillValue(skillNameOrId); });
+export const GetSkillCap = registerExport('GetSkillCap', withAutoConnect(async (skillNameOrId) => { return methods.GetSkillCap(skillNameOrId); });
+export const GetSkillID = registerExport('GetSkillID', withAutoConnect(async (skillName) => { return methods.GetSkillID(skillName); });
+
+// Spells
+export const Cast = registerExport('Cast', withAutoConnect(async (spellName) => { return methods.Cast(spellName); });
+export const CastToObj = registerExport('CastToObj', withAutoConnect(async (spellName, objId) => { return methods.CastToObj(spellName, objId); });
+export const CastToObject = registerExport('CastToObject', withAutoConnect(async (spellName, objId) => { return methods.CastToObject(spellName, objId); });
+export const CastToSelf = registerExport('CastToSelf', withAutoConnect(async (spellName) => { return methods.CastToSelf(spellName); });
+export const CastSelf = registerExport('CastSelf', withAutoConnect(async (spellName) => { return methods.CastSelf(spellName); });
+export const CastSpell = registerExport('CastSpell', withAutoConnect(async (spellId) => { return methods.CastSpell(spellId); });
+export const IsActiveSpellAbility = registerExport('IsActiveSpellAbility', withAutoConnect(async (spellNameOrId) => { return methods.IsActiveSpellAbility(spellNameOrId); });
+
+// Container/Item operations
+export const SetCatchBag = registerExport('SetCatchBag', withAutoConnect(async (objId) => { return methods.SetCatchBag(objId); });
+export const UnsetCatchBag = registerExport('UnsetCatchBag', withAutoConnect(async () => { return methods.UnsetCatchBag(); });
+
+// Object status checks
+export const GetNotoriety = registerExport('GetNotoriety', withAutoConnect(async (objId) => { return methods.GetNotoriety(objId); }, 'GetNotoriety');
+export const GetParent = registerExport('GetParent', withAutoConnect(async (objId) => { return methods.GetParent(objId); });
+export const IsNPC = registerExport('IsNPC', withAutoConnect(async (objId) => { return methods.IsNPC(objId); });
+export const IsDead = registerExport('IsDead', withAutoConnect(async (objId) => { return methods.IsDead(objId); });
+export const IsRunning = registerExport('IsRunning', withAutoConnect(async (objId) => { return methods.IsRunning(objId); });
+export const IsContainer = registerExport('IsContainer', withAutoConnect(async (objId) => { return methods.IsContainer(objId); });
+export const IsMovable = registerExport('IsMovable', withAutoConnect(async (objId) => { return methods.IsMovable(objId); });
+export const IsYellowHits = registerExport('IsYellowHits', withAutoConnect(async (objId) => { return methods.IsYellowHits(objId); });
+export const IsFemale = registerExport('IsFemale', withAutoConnect(async (objId) => { return methods.IsFemale(objId); });
+export const GetLayer = registerExport('GetLayer', withAutoConnect(async (objId) => { return methods.GetLayer(objId); });
+export const IsHouse = registerExport('IsHouse', withAutoConnect(async (objId) => { return methods.IsHouse(objId); });
+
+// Item manipulation
+export const DragItem = registerExport('DragItem', withAutoConnect(async (objId, count) => { return methods.DragItem(objId, count); });
+export const DropItem = registerExport('DropItem', withAutoConnect(async (objId, x, y, z) => { return methods.DropItem(objId, x, y, z); });
+export const OpenDoor = registerExport('OpenDoor', withAutoConnect(async (objId) => { return methods.OpenDoor(objId); });
+export const Bow = registerExport('Bow', withAutoConnect(async () => { return methods.Bow(); });
+export const Salute = registerExport('Salute', withAutoConnect(async () => { return methods.Salute(); });
+export const WearItem = registerExport('WearItem', withAutoConnect(async (layer, objId) => { return methods.WearItem(layer, objId); });
+export const ObjAtLayerEx = registerExport('ObjAtLayerEx', withAutoConnect(async (layer, objId) => { return methods.ObjAtLayerEx(layer, objId); });
+
+// Movement
+export const Step = registerExport('Step', withAutoConnect(async (direction, run) => { return methods.Step(direction, run); });
+export const StepQ = registerExport('StepQ', withAutoConnect(async (direction, run) => { return methods.StepQ(direction, run); });
+export const MoveXYZ = registerExport('MoveXYZ', withAutoConnect(async (x, y, z, accuracyXY, accuracyZ, running) => { return methods.MoveXYZ(x, y, z, accuracyXY, accuracyZ, running); });
+export const MoveXY = registerExport('MoveXY', withAutoConnect(async (x, y, accuracyXY, running, exact) => { return methods.MoveXY(x, y, accuracyXY, running, exact); });
+export const newMoveXY = registerExport('newMoveXY', withAutoConnect(async (x, y, optimized, accuracy, running) => { return methods.newMoveXY(x, y, optimized, accuracy, running); });
+export const newMoveXYZ = registerExport('newMoveXYZ', withAutoConnect(async (x, y, z, accuracyXY, accuracyZ, running, callback) => { return methods.newMoveXYZ(x, y, z, accuracyXY, accuracyZ, running, callback); });
+export const SetBadLocation = registerExport('SetBadLocation', withAutoConnect(async (x, y) => { return methods.SetBadLocation(x, y); });
+export const SetGoodLocation = registerExport('SetGoodLocation', withAutoConnect(async (x, y) => { return methods.SetGoodLocation(x, y); });
+export const ClearBadLocationList = registerExport('ClearBadLocationList', withAutoConnect(async () => { return methods.ClearBadLocationList(); });
+export const SetBadObject = registerExport('SetBadObject', withAutoConnect(async (objType, color, radius) => { return methods.SetBadObject(objType, color, radius); });
+export const ClearBadObjectList = registerExport('ClearBadObjectList', withAutoConnect(async () => { return methods.ClearBadObjectList(); });
+export const CheckLOS = registerExport('CheckLOS', withAutoConnect(async (x1, y1, z1, x2, y2, z2, worldNum, flags, objId) => { return methods.CheckLOS(x1, y1, z1, x2, y2, z2, worldNum, flags, objId); });
+
+// Gumps/Menus
+export const WaitMenu = registerExport('WaitMenu', withAutoConnect(async (caption, prompt) => { return methods.WaitMenu(caption, prompt); });
+export const AutoMenu = registerExport('AutoMenu', withAutoConnect(async (caption, prompt) => { return methods.AutoMenu(caption, prompt); });
+export const MenuPresent = registerExport('MenuPresent', withAutoConnect(async (caption) => { return methods.MenuPresent(caption); });
+export const CancelMenu = registerExport('CancelMenu', withAutoConnect(async () => { return methods.CancelMenu(); });
+export const CloseMenu = registerExport('CloseMenu', withAutoConnect(async () => { return methods.CloseMenu(); });
+export const WaitGump = registerExport('WaitGump', withAutoConnect(async (gumpId) => { return methods.WaitGump(gumpId); });
+export const WaitTextEntry = registerExport('WaitTextEntry', withAutoConnect(async (text) => { return methods.WaitTextEntry(text); });
+export const GumpAutoTextEntry = registerExport('GumpAutoTextEntry', withAutoConnect(async (entryId, text) => { return methods.GumpAutoTextEntry(entryId, text); });
+export const GumpAutoRadiobutton = registerExport('GumpAutoRadiobutton', withAutoConnect(async (groupId, number) => { return methods.GumpAutoRadiobutton(groupId, number); });
+export const GumpAutoCheckBox = registerExport('GumpAutoCheckBox', withAutoConnect(async (checkBoxId, state) => { return methods.GumpAutoCheckBox(checkBoxId, state); });
+export const NumGumpButton = registerExport('NumGumpButton', withAutoConnect(async (gumpId, buttonId) => { return methods.NumGumpButton(gumpId, buttonId); });
+export const NumGumpTextEntry = registerExport('NumGumpTextEntry', withAutoConnect(async (gumpId, entryId, text) => { return methods.NumGumpTextEntry(gumpId, entryId, text); });
+export const NumGumpRadiobutton = registerExport('NumGumpRadiobutton', withAutoConnect(async (gumpId, groupId, number) => { return methods.NumGumpRadiobutton(gumpId, groupId, number); });
+export const NumGumpCheckBox = registerExport('NumGumpCheckBox', withAutoConnect(async (gumpId, checkBoxId, state) => { return methods.NumGumpCheckBox(gumpId, checkBoxId, state); });
+export const GetGumpsCount = registerExport('GetGumpsCount', withAutoConnect(async (gumpId) => { return methods.GetGumpsCount(gumpId); });
+export const CloseSimpleGump = registerExport('CloseSimpleGump', withAutoConnect(async (gumpIndex) => { return methods.CloseSimpleGump(gumpIndex); });
+export const GetGumpSerial = registerExport('GetGumpSerial', withAutoConnect(async (gumpIndex) => { return methods.GetGumpSerial(gumpIndex); });
+export const GetGumpID = registerExport('GetGumpID', withAutoConnect(async (gumpIndex) => { return methods.GetGumpID(gumpIndex); });
+export const IsGumpCanBeClosed = registerExport('IsGumpCanBeClosed', withAutoConnect(async (gumpIndex) => { return methods.IsGumpCanBeClosed(gumpIndex); });
+
+// Trade
+export const IsTrade = registerExport('IsTrade', withAutoConnect(async (tradeWindowNum, itemNum) => { return methods.IsTrade(tradeWindowNum, itemNum); });
+export const GetTradeContainer = registerExport('GetTradeContainer', withAutoConnect(async (tradeWindowNum, itemNum) => { return methods.GetTradeContainer(tradeWindowNum, itemNum); });
+export const GetTradeOpponent = registerExport('GetTradeOpponent', withAutoConnect(async (tradeWindowNum) => { return methods.GetTradeOpponent(tradeWindowNum); });
+export const TradeCount = registerExport('TradeCount', withAutoConnect(async (tradeWindowNum) => { return methods.TradeCount(tradeWindowNum); });
+export const GetTradeOpponentName = registerExport('GetTradeOpponentName', withAutoConnect(async (tradeWindowNum) => { return methods.GetTradeOpponentName(tradeWindowNum); });
+export const TradeCheck = registerExport('TradeCheck', withAutoConnect(async (tradeWindowNum, itemNum) => { return methods.TradeCheck(tradeWindowNum, itemNum); });
+export const ConfirmTrade = registerExport('ConfirmTrade', withAutoConnect(async (tradeWindowNum) => { return methods.ConfirmTrade(tradeWindowNum); });
+export const CancelTrade = registerExport('CancelTrade', withAutoConnect(async (tradeWindowNum) => { return methods.CancelTrade(tradeWindowNum); });
+
+// Communication
+export const UOSay = registerExport('UOSay', withAutoConnect(async (text) => { return methods.UOSay(text); }, 'UOSay');
+export const UOSayColor = registerExport('UOSayColor', withAutoConnect(async (text, color) => { return methods.UOSayColor(text, color); });
+
+// Party
+export const InviteToParty = registerExport('InviteToParty', withAutoConnect(async (objId) => { return methods.InviteToParty(objId); });
+export const RemoveFromParty = registerExport('RemoveFromParty', withAutoConnect(async (objId) => { return methods.RemoveFromParty(objId); });
+export const PartySay = registerExport('PartySay', withAutoConnect(async (text) => { return methods.PartySay(text); });
+export const PartyCanLootMe = registerExport('PartyCanLootMe', withAutoConnect(async (value) => { return methods.PartyCanLootMe(value); });
+export const PartyAcceptInvite = registerExport('PartyAcceptInvite', withAutoConnect(async () => { return methods.PartyAcceptInvite(); });
+
+// Resistance
+export const FireResist = registerExport('FireResist', withAutoConnect(async () => { return methods.FireResist(); });
+export const ColdResist = registerExport('ColdResist', withAutoConnect(async () => { return methods.ColdResist(); });
+export const PoisonResist = registerExport('PoisonResist', withAutoConnect(async () => { return methods.PoisonResist(); });
+export const EnergyResist = registerExport('EnergyResist', withAutoConnect(async () => { return methods.EnergyResist(); });
+
+// Pets
+export const MaxPets = registerExport('MaxPets', withAutoConnect(async () => { return methods.MaxPets(); });
+export const PetsCurrent = registerExport('PetsCurrent', withAutoConnect(async () => { return methods.PetsCurrent(); });
+
+// Utilities
+export const GetConnectedTime = registerExport('GetConnectedTime', withAutoConnect(async () => { return methods.GetConnectedTime(); });
+export const GetDisconnectedTime = registerExport('GetDisconnectedTime', withAutoConnect(async () => { return methods.GetDisconnectedTime(); });
+export const ChangeProfile = registerExport('ChangeProfile', withAutoConnect(async (profileName) => { return methods.ChangeProfile(profileName); });
+export const ChangeProfileEx = registerExport('ChangeProfileEx', withAutoConnect(async (profileName, shardName, charName) => { return methods.ChangeProfileEx(profileName, shardName, charName); });
+export const GetARStatus = registerExport('GetARStatus', withAutoConnect(async () => { return methods.GetARStatus(); });
+export const SetARStatus = registerExport('SetARStatus', withAutoConnect(async (value) => { return methods.SetARStatus(value); });
+export const ProfileShardName = registerExport('ProfileShardName', withAutoConnect(async () => { return methods.ProfileShardName(); });
+export const GetCharTitle = registerExport('GetCharTitle', withAutoConnect(async () => { return methods.GetCharTitle(); });
+export const GetClilocByID = registerExport('GetClilocByID', withAutoConnect(async (clilocId) => { return methods.GetClilocByID(clilocId); });
+export const GetFoundedParamID = registerExport('GetFoundedParamID', withAutoConnect(async () => { return methods.GetFoundedParamID(); });
+export const FindQuantity = registerExport('FindQuantity', withAutoConnect(async (objId) => { return methods.FindQuantity(objId); });
+export const PredictedDirection = registerExport('PredictedDirection', withAutoConnect(async () => { return methods.PredictedDirection(); });
+
+// Movement settings
+export const SetMoveOpenDoor = registerExport('SetMoveOpenDoor', withAutoConnect(async (value) => { return methods.SetMoveOpenDoor(value); });
+export const GetMoveOpenDoor = registerExport('GetMoveOpenDoor', withAutoConnect(async () => { return methods.GetMoveOpenDoor(); });
+export const SetMoveThroughNPC = registerExport('SetMoveThroughNPC', withAutoConnect(async (value) => { return methods.SetMoveThroughNPC(value); });
+export const GetMoveThroughNPC = registerExport('GetMoveThroughNPC', withAutoConnect(async () => { return methods.GetMoveThroughNPC(); });
+export const SetMoveCheckStamina = registerExport('SetMoveCheckStamina', withAutoConnect(async (value) => { return methods.SetMoveCheckStamina(value); });
+export const GetMoveCheckStamina = registerExport('GetMoveCheckStamina', withAutoConnect(async () => { return methods.GetMoveCheckStamina(); });
+
+// Advanced targeting
+export const TargetToTile = registerExport('TargetToTile', withAutoConnect(async (x, y, z, tileType) => { return methods.TargetToTile(x, y, z, tileType); });
+export const WaitTargetTile = registerExport('WaitTargetTile', withAutoConnect(async (x, y, z, tileType) => { return methods.WaitTargetTile(x, y, z, tileType); });
+export const WaitTargetXYZ = registerExport('WaitTargetXYZ', withAutoConnect(async (x, y, z) => { return methods.WaitTargetXYZ(x, y, z); });
+export const WaitTargetType = registerExport('WaitTargetType', withAutoConnect(async (objType) => { return methods.WaitTargetType(objType); });
+export const WaitTargetGround = registerExport('WaitTargetGround', withAutoConnect(async () => { return methods.WaitTargetGround(); });
+
+// Abilities
+export const UsePrimaryAbility = registerExport('UsePrimaryAbility', withAutoConnect(async () => { return methods.UsePrimaryAbility(); });
+export const UseSecondaryAbility = registerExport('UseSecondaryAbility', withAutoConnect(async () => { return methods.UseSecondaryAbility(); });
+export const GetAbility = registerExport('GetAbility', withAutoConnect(async (abilityName) => { return methods.GetAbility(abilityName); });
+export const ToggleFly = registerExport('ToggleFly', withAutoConnect(async () => { return methods.ToggleFly(); });
+
+// Virtues
+export const ReqVirtuesGump = registerExport('ReqVirtuesGump', withAutoConnect(async () => { return methods.ReqVirtuesGump(); });
+export const UseVirtue = registerExport('UseVirtue', withAutoConnect(async (virtueId) => { return methods.UseVirtue(virtueId); });
+
+// Paperdoll
+export const UseSelfPaperdollScroll = registerExport('UseSelfPaperdollScroll', withAutoConnect(async (objId) => { return methods.UseSelfPaperdollScroll(objId); });
+export const UseOtherPaperdollScroll = registerExport('UseOtherPaperdollScroll', withAutoConnect(async (objId) => { return methods.UseOtherPaperdollScroll(objId); });
+
+// Skill locking
+export const ChangeSkillLockState = registerExport('ChangeSkillLockState', withAutoConnect(async (skillId, lockState) => { return methods.ChangeSkillLockState(skillId, lockState); });
+export const GetSkillLockState = registerExport('GetSkillLockState', withAutoConnect(async (skillId) => { return methods.GetSkillLockState(skillId); });
+
+// Journal extended
+export const InJournalBetweenTimes = registerExport('InJournalBetweenTimes', withAutoConnect(async (text, timeBegin, timeEnd) => { return methods.InJournalBetweenTimes(text, timeBegin, timeEnd); });
+export const SetJournalLine = registerExport('SetJournalLine', withAutoConnect(async (index, text) => { return methods.SetJournalLine(index, text); });
+export const AddJournalIgnore = registerExport('AddJournalIgnore', withAutoConnect(async (text) => { return methods.AddJournalIgnore(text); });
+export const ClearJournalIgnore = registerExport('ClearJournalIgnore', withAutoConnect(async (text) => { return methods.ClearJournalIgnore(text); });
+export const AddChatUserIgnore = registerExport('AddChatUserIgnore', withAutoConnect(async (name) => { return methods.AddChatUserIgnore(name); });
+export const ClearChatUserIgnore = registerExport('ClearChatUserIgnore', withAutoConnect(async (name) => { return methods.ClearChatUserIgnore(name); });
+
+// Line methods
+export const LineID = registerExport('LineID', withAutoConnect(async () => { return methods.LineID(); });
+export const LineType = registerExport('LineType', withAutoConnect(async () => { return methods.LineType(); });
+export const LineTime = registerExport('LineTime', withAutoConnect(async () => { return methods.LineTime(); });
+export const LineMsgType = registerExport('LineMsgType', withAutoConnect(async () => { return methods.LineMsgType(); });
+export const LineTextColor = registerExport('LineTextColor', withAutoConnect(async () => { return methods.LineTextColor(); });
+export const LineTextFont = registerExport('LineTextFont', withAutoConnect(async () => { return methods.LineTextFont(); });
+export const LineIndex = registerExport('LineIndex', withAutoConnect(async () => { return methods.LineIndex(); });
+export const LineCount = registerExport('LineCount', withAutoConnect(async () => { return methods.LineCount(); });
+export const LineName = registerExport('LineName', withAutoConnect(async () => { return methods.LineName(); });
+
+// Find extended
+export const SetFindInNulPoint = registerExport('SetFindInNulPoint', withAutoConnect(async (value) => { return methods.SetFindInNulPoint(value); });
+export const GetFindInNulPoint = registerExport('GetFindInNulPoint', withAutoConnect(async () => { return methods.GetFindInNulPoint(); });
+
+// Connection/Profile
+export const Connect = registerExport('Connect', withAutoConnect(async () => { return methods.Connect(); });
+export const Disconnect = registerExport('Disconnect', withAutoConnect(async () => { return methods.Disconnect(); });
+export const GetPauseScriptOnDisconnectStatus = registerExport('GetPauseScriptOnDisconnectStatus', withAutoConnect(async () => { return methods.GetPauseScriptOnDisconnectStatus(); });
+export const SetPauseScriptOnDisconnectStatus = registerExport('SetPauseScriptOnDisconnectStatus', withAutoConnect(async (value) => { return methods.SetPauseScriptOnDisconnectStatus(value); });
+
+// Proxy
+export const ProxyIP = registerExport('ProxyIP', withAutoConnect(async () => { return methods.ProxyIP(); });
+export const ProxyPort = registerExport('ProxyPort', withAutoConnect(async () => { return methods.ProxyPort(); });
+export const UseProxy = registerExport('UseProxy', withAutoConnect(async () => { return methods.UseProxy(); });
+
+// Extended info
+export const GetExtInfo = registerExport('GetExtInfo', withAutoConnect(async () => { return methods.GetExtInfo(); });
+export const LastStatus = registerExport('LastStatus', withAutoConnect(async () => { return methods.LastStatus(); });
+
+// Client methods
+export const ClientPrint = registerExport('ClientPrint', withAutoConnect(async (text) => { return methods.ClientPrint(text); });
+export const ClientPrintEx = registerExport('ClientPrintEx', withAutoConnect(async (objId, color, font, text) => { return methods.ClientPrintEx(objId, color, font, text); });
+
+// System journal extended
+export const AddToSystemJournalEx = registerExport('AddToSystemJournalEx', withAutoConnect(async (text, textColor, bgColor, fontSize, fontName) => { return methods.AddToSystemJournalEx(text, textColor, bgColor, fontSize, fontName); });
+export const ClearSystemJournal = registerExport('ClearSystemJournal', withAutoConnect(async () => { return methods.ClearSystemJournal(); });
+
+// HTTP
+export const HTTP_Get = registerExport('HTTP_Get', withAutoConnect(async (url) => { return methods.HTTP_Get(url); });
+export const HTTP_Post = registerExport('HTTP_Post', withAutoConnect(async (url, data) => { return methods.HTTP_Post(url, data); });
+export const HTTP_Body = registerExport('HTTP_Body', withAutoConnect(async (requestId) => { return methods.HTTP_Body(requestId); });
+export const HTTP_Header = registerExport('HTTP_Header', withAutoConnect(async (requestId) => { return methods.HTTP_Header(requestId); });
+
+// Party extended
+export const PartyMessageTo = registerExport('PartyMessageTo', withAutoConnect(async (objId, text) => { return methods.PartyMessageTo(objId, text); });
+export const PartyDeclineInvite = registerExport('PartyDeclineInvite', withAutoConnect(async (objId) => { return methods.PartyDeclineInvite(objId); });
+export const PartyLeave = registerExport('PartyLeave', withAutoConnect(async () => { return methods.PartyLeave(); });
+export const InParty = registerExport('InParty', withAutoConnect(async (objId) => { return methods.InParty(objId); });
+
+// Game server
+export const GameServerIPString = registerExport('GameServerIPString', withAutoConnect(async () => { return methods.GameServerIPString(); });
+
+// Client target
+export const ClientRequestObjectTarget = registerExport('ClientRequestObjectTarget', withAutoConnect(async () => { return methods.ClientRequestObjectTarget(); });
+export const ClientRequestTileTarget = registerExport('ClientRequestTileTarget', withAutoConnect(async () => { return methods.ClientRequestTileTarget(); });
+export const ClientTargetResponsePresent = registerExport('ClientTargetResponsePresent', withAutoConnect(async () => { return methods.ClientTargetResponsePresent(); });
+
+// Utility
+export const Alarm = registerExport('Alarm', withAutoConnect(async (text) => { return methods.Alarm(text); });
+export const SetSilentMode = registerExport('SetSilentMode', withAutoConnect(async (value) => { return methods.SetSilentMode(value); });
+export const GetSilentMode = registerExport('GetSilentMode', withAutoConnect(async () => { return methods.GetSilentMode(); });
+export const CheckLag = registerExport('CheckLag', withAutoConnect(async (value) => { return methods.CheckLag(value); });
+
+// Gump extended
+export const GetGumpTextLines = registerExport('GetGumpTextLines', withAutoConnect(async (gumpIndex) => { return methods.GetGumpTextLines(gumpIndex); });
+export const GetGumpFullLines = registerExport('GetGumpFullLines', withAutoConnect(async (gumpIndex) => { return methods.GetGumpFullLines(gumpIndex); });
+export const GetGumpShortLines = registerExport('GetGumpShortLines', withAutoConnect(async (gumpIndex) => { return methods.GetGumpShortLines(gumpIndex); });
+export const GetGumpButtonsDescription = registerExport('GetGumpButtonsDescription', withAutoConnect(async (gumpIndex) => { return methods.GetGumpButtonsDescription(gumpIndex); });
+export const GetGumpInfo = registerExport('GetGumpInfo', withAutoConnect(async (gumpIndex) => { return methods.GetGumpInfo(gumpIndex); });
+export const AddGumpIgnoreByID = registerExport('AddGumpIgnoreByID', withAutoConnect(async (gumpId) => { return methods.AddGumpIgnoreByID(gumpId); });
+export const AddGumpIgnoreBySerial = registerExport('AddGumpIgnoreBySerial', withAutoConnect(async (serial) => { return methods.AddGumpIgnoreBySerial(serial); });
+export const ClearGumpsIgnore = registerExport('ClearGumpsIgnore', withAutoConnect(async () => { return methods.ClearGumpsIgnore(); });
+
+// Menu
+export const GetMenu = registerExport('GetMenu', withAutoConnect(async (caption) => { return methods.GetMenu(caption); });
+export const GetLastMenu = registerExport('GetLastMenu', withAutoConnect(async () => { return methods.GetLastMenu(); });
+export const MenuHookPresent = registerExport('MenuHookPresent', withAutoConnect(async (caption) => { return methods.MenuHookPresent(caption); });
+
+// Context menu
+export const RequestContextMenu = registerExport('RequestContextMenu', withAutoConnect(async (objId) => { return methods.RequestContextMenu(objId); }, 'RequestContextMenu');
+export const GetContextMenu = registerExport('GetContextMenu', withAutoConnect(async () => { return methods.GetContextMenu(); });
+export const GetContextMenuRec = registerExport('GetContextMenuRec', withAutoConnect(async () => { return methods.GetContextMenuRec(); });
+export const SetContextMenuHook = registerExport('SetContextMenuHook', withAutoConnect(async (objId, entryId) => { return methods.SetContextMenuHook(objId, entryId); }, 'SetContextMenuHook');
+export const ClearContextMenu = registerExport('ClearContextMenu', withAutoConnect(async (menuId, entryId) => { return methods.ClearContextMenu(menuId, entryId); });
+
+// Item pickup/drop
+export const GetPickupedItem = registerExport('GetPickupedItem', withAutoConnect(async () => { return methods.GetPickupedItem(); });
+export const SetPickupedItem = registerExport('SetPickupedItem', withAutoConnect(async (objId) => { return methods.SetPickupedItem(objId); });
+export const GetDropCheckCoord = registerExport('GetDropCheckCoord', withAutoConnect(async () => { return methods.GetDropCheckCoord(); });
+export const SetDropCheckCoord = registerExport('SetDropCheckCoord', withAutoConnect(async (value) => { return methods.SetDropCheckCoord(value); });
+export const GetDropDelay = registerExport('GetDropDelay', withAutoConnect(async () => { return methods.GetDropDelay(); });
+export const SetDropDelay = registerExport('SetDropDelay', withAutoConnect(async (value) => { return methods.SetDropDelay(value); });
+
+// Pathfinding
+export const GetPathArray = registerExport('GetPathArray', withAutoConnect(async (x, y, running, accuracyXY) => { return methods.GetPathArray(x, y, running, accuracyXY); });
+export const GetPathArray3D = registerExport('GetPathArray3D', withAutoConnect(async (x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running) => { return methods.GetPathArray3D(x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running); });
+export const GetNextStepZ = registerExport('GetNextStepZ', withAutoConnect(async (x1, y1, z1, x2, y2, worldNum, stepZ) => { return methods.GetNextStepZ(x1, y1, z1, x2, y2, worldNum, stepZ); });
+
+// Tile/Map
+export const GetTileFlags = registerExport('GetTileFlags', withAutoConnect(async (worldNum, tileType) => { return methods.GetTileFlags(worldNum, tileType); });
+export const GetLandTileData = registerExport('GetLandTileData', withAutoConnect(async (tileType) => { return methods.GetLandTileData(tileType); });
+export const GetStaticTileData = registerExport('GetStaticTileData', withAutoConnect(async (tileType) => { return methods.GetStaticTileData(tileType); });
+export const GetLayerCount = registerExport('GetLayerCount', withAutoConnect(async (x, y, worldNum) => { return methods.GetLayerCount(x, y, worldNum); });
+export const ReadStaticsXY = registerExport('ReadStaticsXY', withAutoConnect(async (x, y, worldNum) => { return methods.ReadStaticsXY(x, y, worldNum); });
+export const GetSurfaceZ = registerExport('GetSurfaceZ', withAutoConnect(async (x, y, worldNum) => { return methods.GetSurfaceZ(x, y, worldNum); });
+export const IsCellPassable = registerExport('IsCellPassable', withAutoConnect(async (x1, y1, z1, x2, y2, worldNum) => { return methods.IsCellPassable(x1, y1, z1, x2, y2, worldNum); });
+export const GetCell = registerExport('GetCell', withAutoConnect(async (x, y, worldNum) => { return methods.GetCell(x, y, worldNum); });
+
+// Movement timers
+export const SetRunUnmountTimer = registerExport('SetRunUnmountTimer', withAutoConnect(async (value) => { return methods.SetRunUnmountTimer(value); });
+export const SetWalkMountTimer = registerExport('SetWalkMountTimer', withAutoConnect(async (value) => { return methods.SetWalkMountTimer(value); });
+export const SetRunMountTimer = registerExport('SetRunMountTimer', withAutoConnect(async (value) => { return methods.SetRunMountTimer(value); });
+export const SetWalkUnmountTimer = registerExport('SetWalkUnmountTimer', withAutoConnect(async (value) => { return methods.SetWalkUnmountTimer(value); });
+export const GetRunMountTimer = registerExport('GetRunMountTimer', withAutoConnect(async () => { return methods.GetRunMountTimer(); });
+export const GetWalkMountTimer = registerExport('GetWalkMountTimer', withAutoConnect(async () => { return methods.GetWalkMountTimer(); });
+export const GetRunUnmountTimer = registerExport('GetRunUnmountTimer', withAutoConnect(async () => { return methods.GetRunUnmountTimer(); });
+export const GetWalkUnmountTimer = registerExport('GetWalkUnmountTimer', withAutoConnect(async () => { return methods.GetWalkUnmountTimer(); });
+export const GetLastStepQUsedDoor = registerExport('GetLastStepQUsedDoor', withAutoConnect(async () => { return methods.GetLastStepQUsedDoor(); });
+
+// Movement advanced
+export const SetMoveThroughCorner = registerExport('SetMoveThroughCorner', withAutoConnect(async (value) => { return methods.SetMoveThroughCorner(value); });
+export const GetMoveThroughCorner = registerExport('GetMoveThroughCorner', withAutoConnect(async () => { return methods.GetMoveThroughCorner(); });
+export const SetMoveHeuristicMult = registerExport('SetMoveHeuristicMult', withAutoConnect(async (value) => { return methods.SetMoveHeuristicMult(value); });
+export const GetMoveHeuristicMult = registerExport('GetMoveHeuristicMult', withAutoConnect(async () => { return methods.GetMoveHeuristicMult(); });
+export const SetMoveTurnCost = registerExport('SetMoveTurnCost', withAutoConnect(async (value) => { return methods.SetMoveTurnCost(value); });
+export const GetMoveTurnCost = registerExport('GetMoveTurnCost', withAutoConnect(async () => { return methods.GetMoveTurnCost(); });
+export const SetMoveBetweenTwoCorners = registerExport('SetMoveBetweenTwoCorners', withAutoConnect(async (value) => { return methods.SetMoveBetweenTwoCorners(value); });
+export const GetMoveBetweenTwoCorners = registerExport('GetMoveBetweenTwoCorners', withAutoConnect(async () => { return methods.GetMoveBetweenTwoCorners(); });
+
+// Dress/Equipment
+export const GetDressSpeed = registerExport('GetDressSpeed', withAutoConnect(async () => { return methods.GetDressSpeed(); });
+export const SetDressSpeed = registerExport('SetDressSpeed', withAutoConnect(async (value) => { return methods.SetDressSpeed(value); });
+export const SetDress = registerExport('SetDress', withAutoConnect(async () => { return methods.SetDress(); });
+export const EquipDressSet = registerExport('EquipDressSet', withAutoConnect(async () => { return methods.EquipDressSet(); });
+
+// Shop/AutoBuy
+export const AutoBuy = registerExport('AutoBuy', withAutoConnect(async (itemType, itemColor, quantity) => { return methods.AutoBuy(itemType, itemColor, quantity); }, 'AutoBuy');
+export const AutoBuyEx = registerExport('AutoBuyEx', withAutoConnect(async (itemType, itemColor, quantity, price, itemName) => { return methods.AutoBuyEx(itemType, itemColor, quantity, price, itemName); }, 'AutoBuyEx');
+export const GetAutoBuyDelay = registerExport('GetAutoBuyDelay', withAutoConnect(async (shopNum) => { return methods.GetAutoBuyDelay(shopNum); });
+export const SetAutoBuyDelay = registerExport('SetAutoBuyDelay', withAutoConnect(async (shopNum, value) => { return methods.SetAutoBuyDelay(shopNum, value); });
+export const AutoSell = registerExport('AutoSell', withAutoConnect(async (shopNum, itemType, itemColor) => { return methods.AutoSell(shopNum, itemType, itemColor); });
+export const GetAutoSellDelay = registerExport('GetAutoSellDelay', withAutoConnect(async (shopNum) => { return methods.GetAutoSellDelay(shopNum); });
+export const SetAutoSellDelay = registerExport('SetAutoSellDelay', withAutoConnect(async (shopNum, value) => { return methods.SetAutoSellDelay(shopNum, value); });
+
+// Client UI
+export const CloseClientUIWindow = registerExport('CloseClientUIWindow', withAutoConnect(async (windowType, objId) => { return methods.CloseClientUIWindow(windowType, objId); });
+export const CloseClientGump = registerExport('CloseClientGump', withAutoConnect(async (gumpId) => { return methods.CloseClientGump(gumpId); });
+export const ClientHide = registerExport('ClientHide', withAutoConnect(async (objId) => { return methods.ClientHide(objId); });
+export const ClientTargetResponse = registerExport('ClientTargetResponse', withAutoConnect(async () => { return methods.ClientTargetResponse(); });
+
+// Quest/Help
+export const GetQuestArrow = registerExport('GetQuestArrow', withAutoConnect(async () => { return methods.GetQuestArrow(); });
+export const RequestStats = registerExport('RequestStats', withAutoConnect(async (objId) => { return methods.RequestStats(objId); });
+export const HelpRequest = registerExport('HelpRequest', withAutoConnect(async (objId) => { return methods.HelpRequest(objId); });
+export const QuestRequest = registerExport('QuestRequest', withAutoConnect(async (objId) => { return methods.QuestRequest(objId); });
+export const RenameMobile = registerExport('RenameMobile', withAutoConnect(async (objId, newName) => { return methods.RenameMobile(objId, newName); });
+export const MobileCanBeRenamed = registerExport('MobileCanBeRenamed', withAutoConnect(async (objId) => { return methods.MobileCanBeRenamed(objId); });
+
+// Stat locking
+export const SetStatState = registerExport('SetStatState', withAutoConnect(async (statType, lockState) => { return methods.SetStatState(statType, lockState); });
+export const GetStatLockState = registerExport('GetStatLockState', withAutoConnect(async (statType) => { return methods.GetStatLockState(statType); });
+
+// Stealth info
+export const GetStealthInfo = registerExport('GetStealthInfo', withAutoConnect(async () => { return methods.GetStealthInfo(); });
+export const GetClientVersionInt = registerExport('GetClientVersionInt', withAutoConnect(async () => { return methods.GetClientVersionInt(); });
+
+// Paths
+export const StealthPath = registerExport('StealthPath', withAutoConnect(async (pathType, createDir) => { return methods.StealthPath(pathType, createDir); });
+export const GetStealthProfilePath = registerExport('GetStealthProfilePath', withAutoConnect(async (profileNum, createDir) => { return methods.GetStealthProfilePath(profileNum, createDir); });
+export const GetShardPath = registerExport('GetShardPath', withAutoConnect(async (shardNum, createDir) => { return methods.GetShardPath(shardNum, createDir); });
+
+// Global variables
+export const SetGlobal = registerExport('SetGlobal', withAutoConnect(async (varType, varName, varValue) => { return methods.SetGlobal(varType, varName, varValue); });
+
+// Multi
+export const GetMultis = registerExport('GetMultis', withAutoConnect(async () => { return methods.GetMultis(); });
+export const ClearInfoWindow = registerExport('ClearInfoWindow', withAutoConnect(async () => { return methods.ClearInfoWindow(); });
+
+// Buff bar
+export const GetBuffBarInfo = registerExport('GetBuffBarInfo', withAutoConnect(async () => { return methods.GetBuffBarInfo(); });
+
+// FindTypesArrayEx
+export const FindTypesArrayEx = registerExport('FindTypesArrayEx', withAutoConnect(async (objTypes, colors, containers, inSub) => {
+  await methods.FindTypesArrayEx(objTypes, colors, containers, inSub);
+  return methods.GetFindedList();
+}, 'FindTypesArrayEx');
+
+// Bandage
+export const BandageSelf = registerExport('BandageSelf', withAutoConnect(async () => { return methods.BandageSelf(); });
+
+// Use item on mobile
+export const UseItemOnMobile = registerExport('UseItemOnMobile', withAutoConnect(async (itemId, targetId) => { return methods.UseItemOnMobile(itemId, targetId); });
+
+// Global chat
+export const GlobalChatJoinChannel = registerExport('GlobalChatJoinChannel', withAutoConnect(async (channelName) => { return methods.GlobalChatJoinChannel(channelName); });
+export const GlobalChatLeaveChannel = registerExport('GlobalChatLeaveChannel', withAutoConnect(async () => { return methods.GlobalChatLeaveChannel(); });
+export const GlobalChatSendMsg = registerExport('GlobalChatSendMsg', withAutoConnect(async (text) => { return methods.GlobalChatSendMsg(text); });
+export const GlobalChatActiveChannel = registerExport('GlobalChatActiveChannel', withAutoConnect(async () => { return methods.GlobalChatActiveChannel(); });
+export const GlobalChatChannelsList = registerExport('GlobalChatChannelsList', withAutoConnect(async () => { return methods.GlobalChatChannelsList(); });
+
+// Menu items extended
+export const GetMenuItemsEx = registerExport('GetMenuItemsEx', withAutoConnect(async (caption) => { return methods.GetMenuItemsEx(caption); });
+
+// Equipment macros
+export const UnequipItemsSetMacro = registerExport('UnequipItemsSetMacro', withAutoConnect(async () => { return methods.UnequipItemsSetMacro(); });
+export const EquipItemsSetMacro = registerExport('EquipItemsSetMacro', withAutoConnect(async () => { return methods.EquipItemsSetMacro(); });
+
+// Stop mover
+export const StopMover = registerExport('StopMover', withAutoConnect(async () => { return methods.StopMover(); });
+
+// AR extended params
+export const SetARExtParams = registerExport('SetARExtParams', withAutoConnect(async (shardName, charName, useAtEveryConnect) => { return methods.SetARExtParams(shardName, charName, useAtEveryConnect); });
+
+// Convert integer to flags
+export const ConvertIntegerToFlags = registerExport('ConvertIntegerToFlags', withAutoConnect(async (group, flags) => { return methods.ConvertIntegerToFlags(group, flags); });
+
+// Party extended
+export const PartyMembersList = registerExport('PartyMembersList', withAutoConnect(async () => { return methods.PartyMembersList(); });
+
+// ICQ
+export const ICQConnected = registerExport('ICQConnected', withAutoConnect(async () => { return methods.ICQConnected(); });
+export const ICQConnect = registerExport('ICQConnect', withAutoConnect(async (uin, password) => { return methods.ICQConnect(uin, password); });
+export const ICQDisconnect = registerExport('ICQDisconnect', withAutoConnect(async () => { return methods.ICQDisconnect(); });
+export const ICQSetStatus = registerExport('ICQSetStatus', withAutoConnect(async (statusNum) => { return methods.ICQSetStatus(statusNum); });
+export const ICQSetXStatus = registerExport('ICQSetXStatus', withAutoConnect(async (statusNum) => { return methods.ICQSetXStatus(statusNum); });
+export const ICQSendText = registerExport('ICQSendText', withAutoConnect(async (uin, text) => { return methods.ICQSendText(uin, text); });
+
+// Messenger
+export const MessengerGetConnected = registerExport('MessengerGetConnected', withAutoConnect(async (messengerNum) => { return methods.MessengerGetConnected(messengerNum); });
+export const MessengerSetConnected = registerExport('MessengerSetConnected', withAutoConnect(async (messengerNum, value) => { return methods.MessengerSetConnected(messengerNum, value); });
+export const MessengerGetToken = registerExport('MessengerGetToken', withAutoConnect(async (messengerNum) => { return methods.MessengerGetToken(messengerNum); });
+export const MessengerSetToken = registerExport('MessengerSetToken', withAutoConnect(async (messengerNum, token) => { return methods.MessengerSetToken(messengerNum, token); });
+export const MessengerGetName = registerExport('MessengerGetName', withAutoConnect(async (messengerNum) => { return methods.MessengerGetName(messengerNum); });
+export const MessengerSendMessage = registerExport('MessengerSendMessage', withAutoConnect(async (messengerNum, recipient, message) => { return methods.MessengerSendMessage(messengerNum, recipient, message); });
+
+// Missing methods
+export const SetEventProc = registerExport('SetEventProc', withAutoConnect(async (eventIndex) => { return methods.SetEventProc(eventIndex); });
+export const ClearEventProc = registerExport('ClearEventProc', withAutoConnect(async (eventIndex) => { return methods.ClearEventProc(eventIndex); });
+export const GetStaticArtBitmap = registerExport('GetStaticArtBitmap', withAutoConnect(async (id, hue) => { return methods.GetStaticArtBitmap(id, hue); });
+export const PrintScriptMethodsList = registerExport('PrintScriptMethodsList', withAutoConnect(async (fileName, sortedList) => { return methods.PrintScriptMethodsList(fileName, sortedList); });
+export const FillNewWindow = registerExport('FillNewWindow', withAutoConnect(async (text) => { return methods.FillNewWindow(text); });
+export const AddToJournal = registerExport('AddToJournal', withAutoConnect(async (msg) => { return methods.AddToJournal(msg); });
+export const ConsoleEntryUnicodeReply = registerExport('ConsoleEntryUnicodeReply', withAutoConnect(async (text) => { return methods.ConsoleEntryUnicodeReply(text); });
+export const GetStaticsArray = registerExport('GetStaticsArray', withAutoConnect(async () => { return methods.GetStaticsArray(); });
+export const GetLandsArray = registerExport('GetLandsArray', withAutoConnect(async () => { return methods.GetLandsArray(); });
+export const GetShopList = registerExport('GetShopList', withAutoConnect(async () => { return methods.GetShopList(); });
+export const ClearShopList = registerExport('ClearShopList', withAutoConnect(async () => { return methods.ClearShopList(); });
+export const GetToolTipRec = registerExport('GetToolTipRec', withAutoConnect(async (objId) => { return methods.GetToolTipRec(objId); });
+export const GetSkillCurrentValue = registerExport('GetSkillCurrentValue', withAutoConnect(async (skillName) => { return methods.GetSkillCurrentValue(skillName); });
+
+// Export raw methods for batch operations
+export function getRawMethods() { return methodsRaw; }
+
+// Export connection state getters for custom methods
+export function getConnectionState() {
+  return { HOST, PORT, connectionPool, protocol, methodsRaw };
+}
+
+// Cleanup connection pool (call when done)
+// Note: This is used by custom methods, but kept in index.ts as it's used by disconnect()
+export async function closeConnectionPool() {
+  for (const conn of connectionPool) {
+    if (conn.protocol && conn.protocol.socket) {
+      // Clear all pending timeouts
+      if (conn.protocol.pendingPromises) {
+        for (const [id, promise] of conn.protocol.pendingPromises) {
+          if (promise.timeout) {
+            clearTimeout(promise.timeout);
+          }
+        }
+        conn.protocol.pendingPromises.clear();
+      }
+      // Remove all listeners and destroy socket
+      conn.protocol.socket.removeAllListeners();
+      conn.protocol.removeAllListeners();
+      conn.protocol.socket.destroy();
+    }
+  }
+  connectionPool = [];
+}
+
+
+
+// Config (like protocol.HOST)
+export const config = registerExport('config', {
+  get HOST() { return HOST; },
+  set HOST(value) { HOST = value; },
+  get PORT() { return PORT; },
+  set PORT(value) { PORT = value; }
+};
+
+// Note: JavaScript cannot truly block synchronously like Python because:
+// 1. Promise callbacks run in microtask queue, which only executes after current sync code
+// 2. Busy-wait loops prevent the event loop from processing microtasks
+// 3. True blocking requires native modules like 'deasync' or 'sync-rpc'
+//
+// The best we can do is minimize await usage with auto-awaited promise arguments
+// and using parallel() for batch operations.
+
+// Registry pattern: Single source of truth for all exports
+// Every export automatically registers itself here
+const _exportsRegistry: Record<string, any> = {};
+
+// Register an export (used by all export const statements)
+function registerExport(name: string, value: any): any {
+  _exportsRegistry[name] = value;
+  return value;
+}
+
+// Auto-await wrapper: Automatically awaits promise arguments (non-blocking version)
+function autoAwaitWrapper(fn) {
+  const wrapped = async function(...args) {
+    // Auto-await all promise arguments
+    const resolvedArgs = await Promise.all(
+      args.map(arg => arg && typeof arg.then === 'function' ? arg : Promise.resolve(arg))
+    );
+    
+    // Call the function and return its result
+    return fn(...resolvedArgs);
+  };
+  // Preserve _methodName property for parallel execution
+  if ((fn as any)._methodName) {
+    (wrapped as any)._methodName = (fn as any)._methodName;
+  }
+  return wrapped;
+}
+
+// Create auto-awaited exports - automatically collects all exported const functions
+// Uses the registry - single source of truth! No manual list needed!
+function createAutoAwaitedExports(customMethods) {
+  // Collect all exports automatically from registry - single source of truth!
+  const rawExports = { ..._exportsRegistry };
+  
+  // Add custom methods if provided
+  if (customMethods) {
+    rawExports.parallel = customMethods.parallel;
+    rawExports.parallel_items = customMethods.parallel_items;
+    rawExports.FindProps = customMethods.FindProps;
+    rawExports.Find = customMethods.Find;
+  }
+  
+  // Register constants that aren't functions
+  rawExports.config = config;
+  rawExports.connect = connect;
+  rawExports.disconnect = disconnect;
+  rawExports.on = on;
+  rawExports.LAYERS = LAYERS;
+  rawExports.DIRECTIONS = DIRECTIONS;
+  rawExports.NOTORIETY = NOTORIETY;
+  rawExports.SPELLS = SPELLS;
+  rawExports.SKILL_NAMES = SKILL_NAMES;
+  rawExports.EVENTS = EVENTS;
+  rawExports.METHOD_INDICES = METHOD_INDICES;
+  rawExports.getSpellId = getSpellId;
+  
+  // Wrap all async functions with auto-await (except special ones)
+  const wrappedExports = {};
+  const skipWrap = new Set(['parallel', 'parallel_items', 'FindProps', 'Find', 'config', 'connect', 'disconnect', 'on', 'LAYERS', 'DIRECTIONS', 'NOTORIETY', 'SPELLS', 'SKILL_NAMES', 'EVENTS', 'METHOD_INDICES', 'getSpellId']);
+  
+  // Ensure custom methods are not wrapped
+  if (rawExports.parallel) wrappedExports.parallel = rawExports.parallel;
+  if (rawExports.parallel_items) wrappedExports.parallel_items = rawExports.parallel_items;
+  if (rawExports.FindProps) wrappedExports.FindProps = rawExports.FindProps;
+  if (rawExports.Find) wrappedExports.Find = rawExports.Find;
+  
+  for (const [key, value] of Object.entries(rawExports)) {
+    if (skipWrap.has(key)) {
+      wrappedExports[key] = value;
+    } else if (typeof value === 'function') {
+      wrappedExports[key] = autoAwaitWrapper(value);
+    } else {
+      wrappedExports[key] = value;
+    }
+  }
+  
+  return wrappedExports;
+}
+
+// Auto-import: Assign all exports to global scope (Python-like behavior)
+// This allows: import './js_stealth'; then use Self(), GetX(), etc. directly
+/// <reference path="./types/global.d.ts" />
+
+// Import and re-export custom methods (at module level for static imports)
+// Using dynamic import in top-level await context
+const customMethods = await import('./methodscustom.js');
+export const parallel = registerExport('parallel', customMethods.parallel;
+export const parallel_items = registerExport('parallel_items', customMethods.parallel_items;
+export const FindProps = registerExport('FindProps', customMethods.FindProps;
+export const Find = registerExport('Find', customMethods.Find;
+
+if (typeof globalThis !== 'undefined') {
+  const exports = createAutoAwaitedExports(customMethods);
+  // Also export constants and custom methods to global scope
+  Object.assign(globalThis, exports, { 
+    parallel, 
+    parallel_items, 
+    FindProps,
+    Find,
+    LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId 
+  });
+}
