@@ -55,8 +55,8 @@ class ScriptMethod {
         if (this.returnType) {
             const id = this.protocol.sendMethod(this.methodIndex, argData, true);
             // Return a function that waits for the result
-            // Use slightly longer timeout for parallel operations (Stealth might be busy)
-            return () => this.protocol.waitForResult(id, 2000).then(result => this.returnType(result, 0));
+            // Keep original timeout - parallel operations should still be fast if Stealth responds quickly
+            return () => this.protocol.waitForResult(id, 1500).then(result => this.returnType(result, 0));
         }
         else {
             this.protocol.sendMethod(this.methodIndex, argData, false);
@@ -130,9 +130,6 @@ export function createMethods(protocol) {
         Attack: (objId) => new ScriptMethod(protocol, METHOD_INDICES.Attack, [packUInt32], (buf) => unpackUInt32(buf)).call(objId),
         // Wait - method 0 is special (doesn't send to server, just waits)
         Wait: (ms) => {
-            // In Python, Wait() calls _wait() repeatedly in a loop
-            // Method 0 doesn't send anything to server, just checks pause/events
-            // For JavaScript, we just use setTimeout
             return new Promise(resolve => setTimeout(resolve, ms));
         },
         // Stats (player only, no args)

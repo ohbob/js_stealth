@@ -962,14 +962,14 @@ function createAutoAwaitedExports() {
     MessengerGetConnected, MessengerSetConnected, MessengerGetToken, MessengerSetToken, MessengerGetName, MessengerSendMessage,
     GetToolTipRec,
     // Special exports (don't wrap with autoAwait)
-    parallel, parallel_items, Find,
+    parallel, parallel_items, FindProps, Find,
     config, connect, disconnect, on,
     LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId
   };
   
   // Wrap all async functions with auto-await (except special ones)
   const wrappedExports = {};
-  const skipWrap = new Set(['parallel', 'parallel_items', 'Find', 'config', 'connect', 'disconnect', 'on', 'LAYERS', 'DIRECTIONS', 'NOTORIETY', 'SPELLS', 'SKILL_NAMES', 'EVENTS', 'METHOD_INDICES', 'getSpellId']);
+  const skipWrap = new Set(['parallel', 'parallel_items', 'FindProps', 'Find', 'config', 'connect', 'disconnect', 'on', 'LAYERS', 'DIRECTIONS', 'NOTORIETY', 'SPELLS', 'SKILL_NAMES', 'EVENTS', 'METHOD_INDICES', 'getSpellId']);
   
   for (const [key, value] of Object.entries(rawExports)) {
     if (skipWrap.has(key)) {
@@ -993,10 +993,17 @@ function createAutoAwaitedExports() {
 const customMethods = await import('./methodscustom.js');
 export const parallel = customMethods.parallel;
 export const parallel_items = customMethods.parallel_items;
+export const FindProps = customMethods.FindProps;
 export const Find = customMethods.Find;
 
 if (typeof globalThis !== 'undefined') {
   const exports = createAutoAwaitedExports(customMethods);
-  // Also export constants to global scope
-  Object.assign(globalThis, exports, { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId });
+  // Also export constants and custom methods to global scope
+  Object.assign(globalThis, exports, { 
+    parallel, 
+    parallel_items, 
+    FindProps,
+    Find,
+    LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId 
+  });
 }

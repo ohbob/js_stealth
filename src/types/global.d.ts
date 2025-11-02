@@ -127,6 +127,7 @@ declare global {
   // Parallel
   function parallel(commands: Array<[Function, ...any[]] | Function | Promise<any>>, numConnections?: number): Promise<any[]>;
   function parallel_items(items: number[], operations: Function[], numConnections?: number): Promise<Array<{ id: number; data: any[] }>>;
+  function FindProps(items: (number | { id: number; [key: string]: any })[], operations: Function[], keys?: string[], numConnections?: number): Promise<Array<{ id: number; [key: string]: any }>>;
         // Find items and get their properties in one call
         // objTypes/objType: Can be number or hex format (e.g., 401, 0x0191, [401, 0x0191])
         // colors/color: Can be number or hex format (e.g., 65535, 0xFFFF, [0xFFFF, 0x0000])

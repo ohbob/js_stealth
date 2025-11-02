@@ -1561,4 +1561,5 @@ export declare const config: {
 };
 export declare const parallel: typeof import("./methodscustom.js").parallel;
 export declare const parallel_items: typeof import("./methodscustom.js").parallel_items;
+export declare const FindProps: typeof import("./methodscustom.js").FindProps;
 export declare const Find: typeof import("./methodscustom.js").Find;
