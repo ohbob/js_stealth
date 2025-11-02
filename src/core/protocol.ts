@@ -339,21 +339,21 @@ export class Protocol extends EventEmitter {
           const value = parser(data, offset);
           offset += 4;
           args.push(value);
-        } else if (argType === 4 || argType === 5) { // ushort/short
+        } else if (argType === 3 || argType === 4) { // ushort (_ushort) / short (_short)/short
           if (offset + 2 > data.length) {
             break;
           }
           const value = parser(data, offset);
           offset += 2;
           args.push(value);
-        } else if (argType === 6 || argType === 7) { // ubyte/byte
+        } else if (argType === 5 || argType === 6) { // ubyte (_ubyte) / byte (_byte)/byte
           if (offset + 1 > data.length) {
             break;
           }
           const value = parser(data, offset);
           offset += 1;
           args.push(value);
-        } else if (argType === 8) { // bool
+        } else if (argType === 7) { // bool (_bool)
           if (offset + 1 > data.length) {
             break;
           }

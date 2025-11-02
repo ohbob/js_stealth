@@ -297,6 +297,38 @@ export const SKILL_NAMES = [
 
 export type SkillName = typeof SKILL_NAMES[number];
 
+// Buff/Debuff icon IDs (from POL script mapping)
+// These are the icon IDs sent in evbuffdebuffsystem events
+export const BUFFS = {
+  'reactive armor': 1028,
+  'protection': 1029,
+  'arch protection': 1030,
+  'magic reflection': 1031,
+  'incognito': 1032,
+  'polymorph': 1035,
+  'invisibility': 1036,
+  'paralyze': 1037,
+  'poison': 1038,
+  'clumsy': 1040,
+  'feeblemind': 1041,
+  'weaken': 1042,
+  'curse': 1043,
+  'agility': 1045,
+  'cunning': 1046,
+  'strength': 1047,
+  'bless': 1048,
+  'nightsight': 1005,
+  'night sight': 1005,
+  'regeneration': 1009,
+} as const;
+
+export type BuffName = keyof typeof BUFFS;
+
+// Reverse mapping: icon ID -> buff name
+export function getBuffName(iconId: number): string | undefined {
+  return Object.entries(BUFFS).find(([_, id]) => id === iconId)?.[0];
+}
+
 // Event names (from protocol.ts)
 export const EVENTS = [
   'eviteminfo', 'evitemdeleted', 'evspeech', 'evdrawgameplayer',

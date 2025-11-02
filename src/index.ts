@@ -4,9 +4,9 @@ import { connect as connectToStealth } from './core/connection.js';
 import { createMethods } from './methods.js';
 import type { Protocol } from './core/protocol.js';
 // Import and export all constants from constants file
-import { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId } from './constants.js';
-export { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId };
-export type { Layer, Direction, DirectionValue, Notoriety, SpellName, SkillName, EventName } from './constants.js';
+import { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId, BUFFS, getBuffName } from './constants.js';
+export { LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId, BUFFS, getBuffName };
+export type { Layer, Direction, DirectionValue, Notoriety, SpellName, SkillName, EventName, BuffName } from './constants.js';
 
 
 // Global connection state (like py_stealth module-level)
@@ -1056,6 +1056,6 @@ if (typeof globalThis !== 'undefined') {
     parallel_items, 
     FindProps,
     Find,
-    LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId 
+    LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId, BUFFS, getBuffName 
   });
 }

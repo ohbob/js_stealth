@@ -48,6 +48,32 @@ declare global {
   type DirectionValue = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
   type Notoriety = 1 | 2 | 3 | 4 | 5 | 6 | 7;
   type Layer = 0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08 | 0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x0E | 0x10;
+  type BuffName = 'reactive armor' | 'protection' | 'arch protection' | 'magic reflection' | 'incognito' | 'polymorph' | 'invisibility' | 'paralyze' | 'poison' | 'clumsy' | 'feeblemind' | 'weaken' | 'curse' | 'agility' | 'cunning' | 'strength' | 'bless' | 'nightsight' | 'night sight' | 'regeneration';
+  
+  // Constants (from constants.ts)
+  const BUFFS: {
+    readonly 'reactive armor': 1028;
+    readonly 'protection': 1029;
+    readonly 'arch protection': 1030;
+    readonly 'magic reflection': 1031;
+    readonly 'incognito': 1032;
+    readonly 'polymorph': 1035;
+    readonly 'invisibility': 1036;
+    readonly 'paralyze': 1037;
+    readonly 'poison': 1038;
+    readonly 'clumsy': 1040;
+    readonly 'feeblemind': 1041;
+    readonly 'weaken': 1042;
+    readonly 'curse': 1043;
+    readonly 'agility': 1045;
+    readonly 'cunning': 1046;
+    readonly 'strength': 1047;
+    readonly 'bless': 1048;
+    readonly 'nightsight': 1005;
+    readonly 'night sight': 1005;
+    readonly 'regeneration': 1009;
+  };
+  function getBuffName(iconId: number): BuffName | undefined;
   
   // Connection
   function connect(host?: string | null, port?: number | null): Promise<void>;
@@ -523,7 +549,15 @@ declare global {
   function ClearInfoWindow(): Promise<void>;
 
   // Buff bar
-  function GetBuffBarInfo(): Promise<any>;
+  function GetBuffBarInfo(): Promise<Array<{
+    Attribute_ID: number;
+    TimeStart: Date;
+    Seconds: number;
+    ClilocID1: number;
+    ClilocID2: number;
+    ClilocID3: number;
+    BuffText: string;
+  }>>;
 
   // Bandage
   function BandageSelf(): Promise<boolean>;

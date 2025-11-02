@@ -702,6 +702,8 @@ All constants are exported and available globally after importing `js_stealth`:
 - **`NOTORIETY`** - Notoriety constants (e.g., `NOTORIETY.Innocent`, `NOTORIETY.Enemy`)
 - **`SPELLS`** - Spell name to ID mapping (used internally, but available for reference)
 - **`SKILL_NAMES`** - Array of all valid skill names
+- **`BUFFS`** - Buff/debuff icon ID mapping (e.g., `BUFFS.curse`, `BUFFS.bless`)
+- **`getBuffName(iconId)`** - Helper function to get buff name from icon ID (for `evbuffdebuffsystem` events)
 
 ```javascript
 import './js_stealth';
@@ -712,6 +714,16 @@ await Step(DIRECTIONS.North, false);
 const innocents = await FindNotoriety(0x0190, NOTORIETY.Innocent);
 on(EVENTS[2], (data) => { // 'evspeech'
   console.log('Speech event:', data);
+});
+
+// Buff/debuff events - translate icon IDs to names
+await on('evbuffdebuffsystem', (characterId, iconId, isAdded) => {
+  const buffName = getBuffName(iconId) || `unknown (${iconId})`;
+  console.log(`${buffName} ${isAdded ? 'added to' : 'removed from'} character ${characterId}`);
+  // Or use BUFFS directly:
+  if (iconId === BUFFS.curse) {
+    console.log('Curse detected!');
+  }
 });
 ```
 

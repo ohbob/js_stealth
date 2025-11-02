@@ -868,9 +868,84 @@ export function createMethods(protocol) {
     ClearInfoWindow: () => new ScriptMethod(protocol, METHOD_INDICES.ClearInfoWindow, [], null).call(),
     
     // Buff bar
-    GetBuffBarInfo: () => {
+    GetBuffBarInfo: async () => {
       const method = new ScriptMethod(protocol, METHOD_INDICES.GetBuffBarInfo, [], (buf) => buf);
-      return method.call();
+      const buffer = await method.call();
+      
+      // Parse buffer: [count(uint32), ...entries]
+      // Each entry: Attribute_ID(uint16), TimeStart(double), Seconds(uint16), ClilocID1(uint32), ClilocID2(uint32), ClilocID3(uint32), BuffText(UTF-16LE string)
+      if (!buffer || buffer.length < 4) {
+        return [];
+      }
+      
+      const { unpackUInt32, unpackUInt16, unpackDouble } = await import('./core/datatypes.js');
+      
+      const count = unpackUInt32(buffer, 0);
+      const result = [];
+      let offset = 4; // Skip count
+      
+      for (let i = 0; i < count; i++) {
+        // Ensure enough data for fixed part (2 + 8 + 2 + 4 + 4 + 4 = 24 bytes)
+        if (offset + 24 > buffer.length) {
+          break;
+        }
+        
+        const Attribute_ID = unpackUInt16(buffer, offset);
+        offset += 2;
+        
+        const TimeStart = unpackDouble(buffer, offset);
+        offset += 8;
+        
+        const Seconds = unpackUInt16(buffer, offset);
+        offset += 2;
+        
+        const ClilocID1 = unpackUInt32(buffer, offset);
+        offset += 4;
+        
+        const ClilocID2 = unpackUInt32(buffer, offset);
+        offset += 4;
+        
+        const ClilocID3 = unpackUInt32(buffer, offset);
+        offset += 4;
+        
+        // Read UTF-16LE string (length-prefixed)
+        if (offset + 4 > buffer.length) {
+          break;
+        }
+        
+        let BuffText = '';
+        try {
+          const strLength = unpackUInt32(buffer, offset);
+          offset += 4;
+          
+          if (offset + strLength <= buffer.length) {
+            BuffText = buffer.toString('utf-16le', offset, offset + strLength);
+            offset += strLength;
+            
+            // Strip garbage after '@' (matching Python behavior)
+            BuffText = BuffText.split('@')[0].trim();
+          }
+        } catch (e) {
+          // If string parsing fails, continue
+        }
+        
+        // Convert Delphi TDateTime to JavaScript Date
+        // Delphi TDateTime is days since 1899-12-30
+        const delphiEpoch = new Date('1899-12-30').getTime();
+        const jsDate = new Date(delphiEpoch + TimeStart * 86400000);
+        
+        result.push({
+          Attribute_ID,
+          TimeStart: jsDate,
+          Seconds,
+          ClilocID1,
+          ClilocID2,
+          ClilocID3,
+          BuffText
+        });
+      }
+      
+      return result;
     },
     
     // FindTypesArrayEx
