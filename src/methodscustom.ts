@@ -227,7 +227,7 @@ export async function FindProps(items: (number | { id: number; [key: string]: an
 // 
 // Usage:
 //   Find({ objTypes: [0x190], color: 0xFFFF, container: Ground(), operations: [GetX, GetY, GetName] }) // single values auto-converted
-//   Find({ objTypes: [0x190, 0x191], colors: [0xFFFF, 0x0000], containers: [Backpack(), Ground()], operations: [GetX, GetY] }) // multiple values
+//   Find({ objTypes: [0x190, 0x191], colors: [0xFFFF, 0x0000], containers: [Backpack(), Ground()], operations: [GetX, GetY] }) // multiple values (Backpack() promise auto-awaited)
 //   Find({ objTypes: [0x190], operations: [GetX, GetY], keys: ['x', 'y'] }) // custom keys (optional, auto-derived if omitted)
 //   Find({ objTypes: [0xFFFF], operations: [GetHP, GetDistance], filters: [(item) => item.hp > 0 && item.distance < 1000] }) // with filters
 export async function Find(options) {
@@ -263,6 +263,10 @@ export async function Find(options) {
   if (!Array.isArray(objTypes)) objTypes = [objTypes];
   if (!Array.isArray(colors)) colors = colors !== undefined ? [colors] : [0xFFFF];
   if (!Array.isArray(containers)) containers = containers !== undefined ? [containers] : [Ground()];
+  
+  // Await any promises in containers array (e.g., Backpack() returns Promise<number>)
+  // Promise.resolve() handles both promises and non-promises gracefully
+  containers = await Promise.all(containers.map(container => Promise.resolve(container)));
   
   // Find items first (handle errors gracefully)
   let items: number[];

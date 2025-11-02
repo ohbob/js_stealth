@@ -182,17 +182,21 @@ const results = await parallel_items(items, [
 - `FindType(objType, container)` - Find objects by type
   - Returns array of object IDs (automatically calls GetFindedList)
   - `container` defaults to backpack if null, use `Ground()` for ground
+  - Automatically awaits promises (e.g., `Backpack()`) - no `await` needed
   
 ```javascript
 const items = await FindType(0x0EED, Ground());
 const backpackItems = await FindType(0x0EED); // null = backpack
+const backpackItems2 = await FindType(0x0EED, Backpack()); // ✅ No await needed - works directly!
 ```
 
 - `FindTypeEx(objType, color, container, inSub)` - Find objects by type and color
   - Returns array of object IDs (automatically calls GetFindedList)
+  - Automatically awaits promises (e.g., `Backpack()`) - no `await` needed
   
 ```javascript
 const redApples = await FindTypeEx(0x09D0, 0x0021, Ground(), false);
+const backpackApples = await FindTypeEx(0x09D0, 0x0021, Backpack(), false); // ✅ No await needed!
 ```
 
 - `GetFindedList()` - Get list of found objects (usually auto-called)
@@ -202,12 +206,23 @@ const redApples = await FindTypeEx(0x09D0, 0x0021, Ground(), false);
 - `FindNotoriety(objType, notoriety)` - Find by notoriety
 - `FindFullQuantity(objId)` - Get full quantity of found item
 - `FindTypesArrayEx(objTypes, colors, containers, inSub)` - Find multiple types with multiple colors/containers
+  - Automatically awaits promises in `containers` array (e.g., `Backpack()`) - no `await` needed
+  
+```javascript
+const items = await FindTypesArrayEx(
+  [0x0191, 0x0190], 
+  [0xFFFF, 0x0000], 
+  [Backpack(), Ground()], // ✅ No await needed - promises auto-awaited!
+  false
+);
+```
 
 ### Advanced Finding
 
 - `Find(options)` - Find items and get their properties in one call (custom convenience method)
   - Finds items matching criteria and automatically fetches properties
   - Returns objects with properties as keys (auto-derived from function names)
+  - Automatically awaits promises in `containers` - no `await` needed for `Backpack()` etc.
   
 ```javascript
 // Basic usage - single type, auto-derived keys
@@ -218,11 +233,11 @@ const creatures = await Find({
 });
 // Returns: [{ id: 123, hp: 25, x: 100, y: 200, name: 'a drake', distance: 10 }, ...]
 
-// Multiple types, colors, containers
+// Multiple types, colors, containers - promises auto-awaited!
 const items = await Find({
   objTypes: [0x0191, 0x0190],
   colors: [0xFFFF, 0x0000],
-  containers: [Backpack(), Ground()],
+  containers: [Backpack(), Ground()], // ✅ No await needed - works directly!
   operations: [GetName, GetQuantity]
 });
 

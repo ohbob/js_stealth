@@ -217,16 +217,19 @@ export function createMethods(protocol) {
     // Search/Finding
     Ground: () => 0, // Ground() just returns 0
     SetFindDistance: (value) => new ScriptMethod(protocol, METHOD_INDICES.SetFindDistance, [packUInt32], null).call(value),
-    FindTypeEx: (objType, color, container = 0, inSub = true) => {
+    FindTypeEx: async (objType, color, container = 0, inSub = true) => {
+      // Resolve container if it's a promise (e.g., Backpack())
+      const cont = await Promise.resolve(container);
       const method = new ScriptMethod(protocol, METHOD_INDICES.FindTypeEx, 
         [packUInt16, packUInt16, packUInt32, packBool], 
         (buf) => unpackUInt32(buf));
-      return method.call(objType, color, container, inSub);
+      return method.call(objType, color, cont, inSub);
     },
-    FindType: (objType, container = null) => {
+    FindType: async (objType, container = null) => {
       // FindType uses FindTypeEx with color=0xFFFF, inSub=false
+      // Resolve container if it's a promise (e.g., Backpack())
       // If container is null, use Backpack() (0x40000000), but for Ground we pass 0
-      const cont = container === null ? 0x40000000 : (container === 0 ? 0 : container);
+      const cont = container === null ? 0x40000000 : (container === 0 ? 0 : await Promise.resolve(container));
       const method = new ScriptMethod(protocol, METHOD_INDICES.FindTypeEx, 
         [packUInt16, packUInt16, packUInt32, packBool], 
         (buf) => unpackUInt32(buf));
@@ -837,6 +840,9 @@ export function createMethods(protocol) {
     
     // FindTypesArrayEx
     FindTypesArrayEx: async (objTypes, colors, containers, inSub) => {
+      // Resolve any promises in containers array (e.g., Backpack())
+      containers = await Promise.all(containers.map(container => Promise.resolve(container)));
+      
       // Pack arrays manually: [len1, buffer1, len2, buffer2, len3, buffer3, inSub]
       // Format matches Python: len(uint32), array(uint16/uint32), len, array, len, array, bool
       const len1 = packUInt32(objTypes.length);
