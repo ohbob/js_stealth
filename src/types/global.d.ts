@@ -159,7 +159,7 @@ declare global {
   function CalcDir(Xfrom: number, Yfrom: number, Xto: number, Yto: number): DirectionValue;
 
   // Spells
-  function Cast(SpellName: SpellName, ObjID?: number | null): Promise<boolean>;
+  function Cast(SpellName: SpellName): Promise<boolean>;
   function CastToObj(SpellName: SpellName, ObjID: number): Promise<boolean>;
   function CastToSelf(SpellName: SpellName): Promise<boolean>;
   function CastSelf(SpellName: SpellName): Promise<boolean>;

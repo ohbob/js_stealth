@@ -329,10 +329,7 @@ export function createMethods(protocol) {
     GetSkillID: (skillName) => new ScriptMethod(protocol, METHOD_INDICES.GetSkillID, [packString], (buf) => unpackInt32(buf)).call(skillName),
     
     // Spells
-    Cast: async (spellName: SpellName | string, objId: number | null = null) => {
-      if (objId !== null) {
-        await methods.WaitTargetObject(objId);
-      }
+    Cast: async (spellName: SpellName | string) => {
       const spellId = getSpellId(spellName);
       const method = new ScriptMethod(protocol, METHOD_INDICES.CastSpell, [packInt32], null);
       await method.call(spellId);

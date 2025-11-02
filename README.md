@@ -11,20 +11,18 @@ JavaScript client for Stealth with async/await API. Minimal implementation match
 ## Quick Start
 
 ```javascript
-import * as stealth from './index.js';
+import './js_stealth';
 
-stealth.config.HOST = '192.168.88.13';
-await stealth.connect();
+config.HOST = '192.168.88.13';
 
-const selfId = await stealth.Self();
-const [x, y, z] = await stealth.parallel([
-  [stealth.GetX, selfId],
-  [stealth.GetY, selfId],
-  [stealth.GetZ, selfId],
+const selfId = await Self();
+const [x, y, z] = await parallel([
+  [GetX, selfId],
+  [GetY, selfId],
+  [GetZ, selfId],
 ]);
 
 console.log(`Position: ${x}, ${y}, ${z}`);
-await stealth.disconnect();
 ```
 
 ## Connection
@@ -33,24 +31,24 @@ await stealth.disconnect();
 Connect to Stealth client. Port is auto-discovered if not provided.
 
 ```javascript
-await stealth.connect('192.168.88.13', 50026);
+await connect('192.168.88.13', 50026);
 // or
-stealth.config.HOST = '192.168.88.13';
-await stealth.connect();
+config.HOST = '192.168.88.13';
+await connect(); 
 ```
 
 ### `disconnect()`
-Close connection to Stealth.
+Close connection to 
 
 ```javascript
-await stealth.disconnect();
+await disconnect();
 ```
 
 ### `on(event, callback)`
 Subscribe to Stealth events.
 
 ```javascript
-stealth.on('evspeech', (data) => {
+on('evspeech', (data) => {
   console.log('Speech:', data);
 });
 ```
@@ -61,29 +59,30 @@ stealth.on('evspeech', (data) => {
 Execute multiple commands in parallel for maximum performance.
 
 ```javascript
-const [x, y, z, type, name] = await stealth.parallel([
-  [stealth.GetX, selfId],
-  [stealth.GetY, selfId],
-  [stealth.GetZ, selfId],
-  [stealth.GetType, selfId],
-  [stealth.GetName, selfId],
+const [x, y, z, type, name] = await parallel([
+  [GetX, selfId],
+  [GetY, selfId],
+  [GetZ, selfId],
+  [GetType, selfId],
+  [GetName, selfId],
 ]);
 ```
 
-### `parallel_items(items, operations)`
+### `parallel_items(items, operations, numConnections?)`
 Execute operations on multiple items in parallel.
 
 ```javascript
-const items = await stealth.FindType(0xFFFF, stealth.Ground());
-const results = await stealth.parallel_items(items, [
-  stealth.GetX,
-  stealth.GetY,
-  stealth.GetZ,
-  stealth.GetType,
-  stealth.GetName,
+const items = await FindType(0xFFFF, Ground());
+const results = await parallel_items(items, [
+  GetX,
+  GetY,
+  GetZ,
+  GetType,
+  GetName,
 ]);
 
 // Returns array of {id, data: [x, y, z, type, name]}
+// Note: Use Find() or FindProps() for a more convenient API with automatic key mapping
 ```
 
 ## Player Information
@@ -185,15 +184,15 @@ const results = await stealth.parallel_items(items, [
   - `container` defaults to backpack if null, use `Ground()` for ground
   
 ```javascript
-const items = await stealth.FindType(0x0EED, stealth.Ground());
-const backpackItems = await stealth.FindType(0x0EED); // null = backpack
+const items = await FindType(0x0EED, Ground());
+const backpackItems = await FindType(0x0EED); // null = backpack
 ```
 
 - `FindTypeEx(objType, color, container, inSub)` - Find objects by type and color
   - Returns array of object IDs (automatically calls GetFindedList)
   
 ```javascript
-const redApples = await stealth.FindTypeEx(0x09D0, 0x0021, stealth.Ground(), false);
+const redApples = await FindTypeEx(0x09D0, 0x0021, Ground(), false);
 ```
 
 - `GetFindedList()` - Get list of found objects (usually auto-called)
@@ -202,6 +201,61 @@ const redApples = await stealth.FindTypeEx(0x09D0, 0x0021, stealth.Ground(), fal
 - `FindAtCoord(x, y)` - Find items at coordinates
 - `FindNotoriety(objType, notoriety)` - Find by notoriety
 - `FindFullQuantity(objId)` - Get full quantity of found item
+- `FindTypesArrayEx(objTypes, colors, containers, inSub)` - Find multiple types with multiple colors/containers
+
+### Advanced Finding
+
+- `Find(options)` - Find items and get their properties in one call (custom convenience method)
+  - Finds items matching criteria and automatically fetches properties
+  - Returns objects with properties as keys (auto-derived from function names)
+  
+```javascript
+// Basic usage - single type, auto-derived keys
+const creatures = await Find({
+  objTypes: [0xFFFF],
+  containers: [Ground()],
+  operations: [GetHP, GetX, GetY, GetName, GetDistance]
+});
+// Returns: [{ id: 123, hp: 25, x: 100, y: 200, name: 'a drake', distance: 10 }, ...]
+
+// Multiple types, colors, containers
+const items = await Find({
+  objTypes: [0x0191, 0x0190],
+  colors: [0xFFFF, 0x0000],
+  containers: [Backpack(), Ground()],
+  operations: [GetName, GetQuantity]
+});
+
+// With filters
+const alive = await Find({
+  objTypes: [0xFFFF],
+  operations: [GetHP, GetDistance],
+  filters: [(item) => item.hp > 0 && item.distance < 100]
+});
+
+// Custom keys
+const data = await Find({
+  objTypes: [0x0EED],
+  operations: [GetX, GetY, GetName],
+  keys: ['posX', 'posY', 'itemName']
+});
+```
+
+- `FindProps(items, operations, keys?)` - Get properties for existing objects (custom convenience method)
+  - Adds properties to existing objects or creates new ones from IDs
+  - Automatically preserves existing properties when objects are passed
+  
+```javascript
+// Get properties for IDs
+const objects = await FindProps([obj1, obj2], [GetX, GetY, GetName]);
+// Returns: [{ id: obj1, x: 100, y: 200, name: 'item' }, ...]
+
+// Get properties for existing objects (preserves existing properties)
+const creatures = await Find({ objTypes: [0xFFFF], operations: [GetHP] });
+const withNames = await FindProps(creatures, [GetName, GetDistance]);
+// Returns: [{ id: 123, hp: 25, name: 'a drake', distance: 10 }, ...]
+// Note: hp property is preserved from the original objects!
+```
 
 ### Ignore List
 - `Ignore(objId)` - Add object to ignore list
@@ -264,10 +318,10 @@ const redApples = await stealth.FindTypeEx(0x09D0, 0x0021, stealth.Ground(), fal
 
 ```javascript
 // Simple movement
-await stealth.MoveXY(2800, 480, 0, false, false);
+await MoveXY(2800, 480, 0, false, false);
 
 // Pathfinding movement (may take longer)
-await stealth.newMoveXYZ(2800, 480, 15, 0, 0, false);
+await newMoveXYZ(2800, 480, 15, 0, 0, false);
 ```
 
 ### Bad Locations
@@ -295,18 +349,18 @@ await stealth.newMoveXYZ(2800, 480, 15, 0, 0, false);
 
 ```javascript
 // Use skill by name (recommended)
-await stealth.UseSkill('hiding');
-await stealth.UseSkill('stealth');
-await stealth.UseSkill('detect hidden');
+await UseSkill('hiding');
+await UseSkill('stealth');
+await UseSkill('detect hidden');
 
 // Get skill values by name
-const hidingValue = await stealth.GetSkillValue('hiding');
-const hidingCap = await stealth.GetSkillCap('hiding');
+const hidingValue = await GetSkillValue('hiding');
+const hidingCap = await GetSkillCap('hiding');
 
 // Or use by ID
-await stealth.UseSkillID(14); // hiding
-await stealth.UseSkill(14); // also works with ID
-const value = await stealth.GetSkillValue(14); // also works with ID
+await UseSkillID(14); // hiding
+await UseSkill(14); // also works with ID
+const value = await GetSkillValue(14); // also works with ID
 ```
 
 ### Available Skill Names
@@ -330,7 +384,7 @@ Note: Skill names are case-insensitive and should match UO skill names exactly. 
 ## Spells
 
 ### Casting
-- `Cast(spellName, objId)` - Cast spell by name, optionally target object
+- `Cast(spellName)` - Cast spell by name
 - `CastToObj(spellName, objId)` - Cast spell and target object
 - `CastToObject(spellName, objId)` - Alias for CastToObj
 - `CastToSelf(spellName)` - Cast spell and target self
@@ -339,25 +393,22 @@ Note: Skill names are case-insensitive and should match UO skill names exactly. 
 - `IsActiveSpellAbility(spellNameOrId)` - Check if spell ability is active
 
 ```javascript
-// Cast without target
-await stealth.Cast('heal');
-await stealth.Cast('greater heal');
-await stealth.Cast('teleport');
+// Cast without target (waits for manual targeting)
+await Cast('heal');
+await Cast('greater heal');
+await Cast('teleport');
 
 // Cast with target object (waits for target cursor, then casts)
-const targetId = await stealth.WarTargetID();
-await stealth.Cast('heal', targetId);
+const targetId = await WarTargetID();
+await CastToObj('heal', targetId);
+await CastToObject('greater heal', targetId); // Alias
 
 // Cast to self
-await stealth.CastToSelf('heal');
-await stealth.CastSelf('greater heal'); // Alias
-
-// Or use CastToObj
-await stealth.CastToObj('greater heal', targetId);
-await stealth.CastToObject('harm', enemyId);
+await CastToSelf('heal');
+await CastSelf('greater heal'); // Alias
 
 // Or cast by ID
-await stealth.CastSpell(4); // heal
+await CastSpell(4); // heal
 ```
 
 ### Available Spell Names
@@ -414,14 +465,14 @@ await stealth.CastSpell(4); // heal
 - `Wait(ms)` - Wait specified milliseconds
 
 ```javascript
-await stealth.Wait(1000); // Wait 1 second
+await Wait(1000); // Wait 1 second
 ```
 
 ### Event Handling
 - `on(event, callback)` - Subscribe to events
 
 ```javascript
-stealth.on('evspeech', (data) => {
+on('evspeech', (data) => {
   console.log('Speech event:', data);
 });
 ```
@@ -429,8 +480,8 @@ stealth.on('evspeech', (data) => {
 ## Configuration
 
 ```javascript
-stealth.config.HOST = '192.168.88.13';
-stealth.config.PORT = 50026; // Optional, auto-discovered if not set
+config.HOST = '192.168.88.13';
+config.PORT = 50026; // Optional, auto-discovered if not set
 ```
 
 ## Examples
@@ -438,22 +489,22 @@ stealth.config.PORT = 50026; // Optional, auto-discovered if not set
 ### Find and Use Items
 
 ```javascript
-const apples = await stealth.FindType(0x09D0, stealth.Ground());
+const apples = await FindType(0x09D0, Ground());
 for (const appleId of apples) {
-  await stealth.UseObject(appleId);
-  await stealth.Wait(1000);
+  await UseObject(appleId);
+  await Wait(1000);
 }
 ```
 
 ### Combat Loop
 
 ```javascript
-const target = await stealth.WarTargetID();
+const target = await WarTargetID();
 if (target) {
-  await stealth.Attack(target);
-  const hp = await stealth.GetHP(target);
+  await Attack(target);
+  const hp = await GetHP(target);
   if (hp < 50) {
-    await stealth.CastSpell('heal'); // Heal
+    await Cast('heal'); // Heal
   }
 }
 ```
@@ -461,30 +512,45 @@ if (target) {
 ### Movement Pattern
 
 ```javascript
-const selfId = await stealth.Self();
-const [x, y] = await stealth.parallel([
-  [stealth.GetX, selfId],
-  [stealth.GetY, selfId],
+const selfId = await Self();
+const [x, y] = await parallel([
+  [GetX, selfId],
+  [GetY, selfId],
 ]);
 
 // Move to coordinates
-await stealth.MoveXY(x + 4, y + 4, 0, false, false);
+await MoveXY(x + 4, y + 4, 0, false, false);
 ```
 
 ### Parallel Data Gathering
 
 ```javascript
-const items = await stealth.FindType(0xFFFF, stealth.Ground());
-const data = await stealth.parallel_items(items, [
-  stealth.GetX,
-  stealth.GetY,
-  stealth.GetZ,
-  stealth.GetType,
-  stealth.GetName,
-  stealth.GetHP,
-]);
+// Using Find() - recommended for finding and getting properties in one call
+const creatures = await Find({
+  objTypes: [0xFFFF],
+  containers: [Ground()],
+  operations: [GetX, GetY, GetZ, GetType, GetName, GetHP],
+  filters: [(item) => item.hp > 0 && item.distance < 100]
+});
+// Returns: [{ id: 123, x: 100, y: 200, z: 0, type: 60, name: 'a drake', hp: 25 }, ...]
 
-// data = [{id: 123, data: [x, y, z, type, name, hp]}, ...]
+// Using parallel_items (lower-level API)
+const items = await FindType(0xFFFF, Ground());
+const data = await parallel_items(items, [
+  GetX,
+  GetY,
+  GetZ,
+  GetType,
+  GetName,
+  GetHP,
+]);
+// Returns: [{id: 123, data: [x, y, z, type, name, hp]}, ...]
+
+// Using FindProps to add properties to existing objects
+const filtered = creatures.filter(c => c.hp > 0);
+const withDetails = await FindProps(filtered, [GetDistance, GetColor]);
+// Returns: [{ id: 123, hp: 25, x: 100, y: 200, ..., distance: 10, color: 0 }, ...]
+// Note: All properties from 'filtered' are preserved!
 ```
 
 ## Notes
@@ -492,4 +558,8 @@ const data = await stealth.parallel_items(items, [
 - All methods are async and must be awaited
 - Use `parallel()` for multiple operations to maximize performance
 - `FindType` and `FindTypeEx` automatically return the found list
+- Use `Find()` for finding items and getting their properties in one call (recommended)
+- Use `FindProps()` to add properties to existing objects or convert IDs to objects
+- `parallel_items()` is a lower-level API - prefer `Find()` or `FindProps()` for convenience
 - Method signatures match py_stealth for easy porting
+- Functions are available globally after `import './js_stealth'` - no namespace needed
