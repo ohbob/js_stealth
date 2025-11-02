@@ -434,7 +434,7 @@ const allItems = await Find({ objTypes: [0xFFFF], colors: [0xFFFF] });
 const items = await Find({
   objTypes: [0x0191, 0x0190],
   operations: [GetName, GetQuantity],
-  filters: [(item) => item.quantity > 0]
+  filters: [(item) => item.quantity > 2]
 });
 // Returns: [{ id: 123, name: 'Apple', quantity: 5 }, ...]
 
@@ -443,7 +443,7 @@ const nearbyCreatures = await Find({
   objTypes: [0xFFFF],
   operations: [GetDistance, GetHP],
   filters: [
-    (item) => item.distance < 100,  // Filter by distance first
+    (item) => item.distance < 10,  // Filter by distance first
     (item) => item.hp > 0           // Then by HP
   ],
   properties: [GetName, GetNotoriety, GetType] // Get these only on filtered results
@@ -1035,7 +1035,7 @@ await CastSelf('greater heal'); // Alias
 // Or cast by ID
 await CastSpell(4); // heal
 
-// Check if spell ability is active (like chivalry, bushido, etc.)
+// Check if spell ability is active (see list below)
 const enemyOfOneActive = await IsActiveSpellAbility('enemy of one');
 const confidenceActive = await IsActiveSpellAbility('confidence');
 
@@ -1050,8 +1050,63 @@ if (!enemyOfOneActive) {
   }
 }
 
-// Also works with spell IDs
-const spell4Active = await IsActiveSpellAbility(4); // heal (though heal isn't an ability)
+// Also works with spell IDs (using getSpellId helper)
+const enemyOfOneId = getSpellId('enemy of one');
+const isActive = await IsActiveSpellAbility(enemyOfOneId);
+```
+
+### Active Spell Abilities
+
+These are spells/abilities that have an active state and can be checked with `IsActiveSpellAbility`:
+
+**Chivalry (Paladin):**
+- `'divine fury'` - Increases damage and attack speed
+- `'enemy of one'` - Massive damage bonus against one target
+
+**Bushido:**
+- `'confidence'` - Increases damage and reduces damage taken
+- `'counter attack'` - Automatic counter-attack
+- `'evasion'` - Dodges next attack
+
+**Ninjitsu:**
+- `'animal form'` - Transforms into an animal
+- `'mirror image'` - Creates a decoy
+
+**Necromancy:**
+- `'vampiric embrace'` - Vampire form (life leech)
+- `'lich form'` - Lich form (mana leech)
+- `'wraith form'` - Wraith form (physical damage immunity)
+
+**Other:**
+- Some transformation spells may also have active states
+
+```javascript
+// Example: Check and activate Chivalry abilities
+const divineFuryActive = await IsActiveSpellAbility('divine fury');
+const enemyOfOneActive = await IsActiveSpellAbility('enemy of one');
+
+if (!divineFuryActive) {
+  await Cast('divine fury');
+  await Wait(500);
+}
+
+// Example: Check Bushido abilities before combat
+const confidenceActive = await IsActiveSpellAbility('confidence');
+if (!confidenceActive) {
+  await Cast('confidence');
+  await Wait(500);
+}
+
+// Example: Check Necromancy forms
+const vampiricEmbraceActive = await IsActiveSpellAbility('vampiric embrace');
+const lichFormActive = await IsActiveSpellAbility('lich form');
+const wraithFormActive = await IsActiveSpellAbility('wraith form');
+
+// Only one form can be active at a time
+if (!vampiricEmbraceActive && !lichFormActive && !wraithFormActive) {
+  await Cast('vampiric embrace');
+  await Wait(500);
+}
 ```
 
 ### Available Spell Names
