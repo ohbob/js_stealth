@@ -8,7 +8,7 @@ JavaScript client for Stealth with async/await API. Minimal implementation match
 # No dependencies - pure Node.js/Bun
 ```
 
-## Quick Start
+## Connect to remote stealth server
 
 ```javascript
 import './js_stealth';
@@ -34,7 +34,7 @@ Connect to Stealth client. Port is auto-discovered if not provided.
 await connect('192.168.88.13', 50026);
 // or
 config.HOST = '192.168.88.13';
-await connect(); 
+// await connect(); 
 ```
 
 ### `disconnect()`
