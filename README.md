@@ -5,7 +5,7 @@ JavaScript client for Stealth with async/await API. Minimal implementation match
 ## Installation
 
 ```bash
-# No dependencies - pure Node.js/Bun
+# No dependencies - pure Bun.js
 ```
 
 ## Connect to remote stealth server
@@ -139,6 +139,16 @@ const results = await parallel_items(items, [
 - `ShardName()` - Get shard name
 - `WorldNum()` - Get current world number
 
+```javascript
+const selfId = await Self();
+const charName = await CharName();
+const profileName = await ProfileName();
+const shardName = await ShardName();
+const worldNum = await WorldNum();
+
+console.log(`${charName} on ${shardName} (profile: ${profileName}, world: ${worldNum})`);
+```
+
 ### Position
 - `GetX(objId)` - Get X coordinate
 - `GetY(objId)` - Get Y coordinate
@@ -147,6 +157,20 @@ const results = await parallel_items(items, [
 - `PredictedY()` - Get predicted Y (for movement)
 - `PredictedZ()` - Get predicted Z (for movement)
 - `PredictedDirection()` - Get predicted facing direction
+
+```javascript
+const selfId = await Self();
+const x = await GetX(selfId);
+const y = await GetY(selfId);
+const z = await GetZ(selfId);
+console.log(`Position: [${x}, ${y}, ${z}]`);
+
+// Predicted position (for movement calculations)
+const predX = await PredictedX();
+const predY = await PredictedY();
+const predZ = await PredictedZ();
+const predDir = await PredictedDirection();
+```
 
 ### Attributes (Self)
 - `Str()` - Get strength
@@ -167,6 +191,36 @@ const results = await parallel_items(items, [
 - `Sex()` - Get gender
 - `Backpack()` - Get backpack ID
 
+```javascript
+// Get all stats in parallel
+const [str, int, dex, hp, maxhp, mana, maxmana, stam, maxstam] = await parallel([
+  [Str],
+  [Int],
+  [Dex],
+  [HP],
+  [MaxHP],
+  [Mana],
+  [MaxMana],
+  [Stam],
+  [MaxStam],
+]);
+
+console.log(`Stats: STR ${str}, INT ${int}, DEX ${dex}`);
+console.log(`HP: ${hp}/${maxhp}, Mana: ${mana}/${maxmana}, Stam: ${stam}/${maxstam}`);
+
+const weight = await Weight();
+const maxWeight = await MaxWeight();
+const gold = await Gold();
+const armor = await Armor();
+const luck = await Luck();
+const race = await Race();
+const sex = await Sex();
+const backpackId = await Backpack();
+
+console.log(`Weight: ${weight}/${maxWeight}, Gold: ${gold}, Armor: ${armor}, Luck: ${luck}`);
+console.log(`Race: ${race}, Gender: ${sex}, Backpack ID: ${backpackId}`);
+```
+
 ### Attributes (Objects)
 - `GetStr(objId)` - Get strength
 - `GetInt(objId)` - Get intelligence
@@ -177,6 +231,21 @@ const results = await parallel_items(items, [
 - `GetMaxHP(objId)` - Get max hit points
 - `GetMaxMana(objId)` - Get max mana
 - `GetMaxStam(objId)` - Get max stamina
+
+```javascript
+const targetId = await WarTargetID();
+if (targetId) {
+  const [hp, maxhp, str, int, dex] = await parallel([
+    [GetHP, targetId],
+    [GetMaxHP, targetId],
+    [GetStr, targetId],
+    [GetInt, targetId],
+    [GetDex, targetId],
+  ]);
+  
+  console.log(`Target HP: ${hp}/${maxhp}, Stats: ${str}/${int}/${dex}`);
+}
+```
 
 ### Status
 - `Connected()` - Check if connected to server
@@ -190,6 +259,31 @@ const results = await parallel_items(items, [
 - `IsNPC(objId)` - Check if object is NPC
 - `IsContainer(objId)` - Check if object is container
 - `IsMovable(objId)` - Check if object is movable
+
+```javascript
+// Check connection and self status
+if (!(await Connected())) {
+  console.log('Not connected!');
+}
+
+const isDead = await Dead();
+const isHidden = await Hidden();
+const isPoisoned = await Poisoned();
+const isParalyzed = await Paralyzed();
+const inWarMode = await WarMode();
+
+// Check object status
+const targetId = await WarTargetID();
+if (targetId) {
+  const isTargetDead = await IsDead(targetId);
+  const isTargetRunning = await IsRunning(targetId);
+  const isTargetNPC = await IsNPC(targetId);
+  const isTargetContainer = await IsContainer(targetId);
+  const isTargetMovable = await IsMovable(targetId);
+  
+  console.log(`Target: Dead=${isTargetDead}, Running=${isTargetRunning}, NPC=${isTargetNPC}`);
+}
+```
 
 ## Object Information
 
@@ -209,10 +303,45 @@ const results = await parallel_items(items, [
 - `GetNotoriety(objId)` - Get notoriety
 - `IsObjectExists(objId)` - Check if object exists
 
+```javascript
+const itemId = 12345;
+
+// Get basic properties in parallel
+const [type, name, color, quantity, distance, parent] = await parallel([
+  [GetType, itemId],
+  [GetName, itemId],
+  [GetColor, itemId],
+  [GetQuantity, itemId],
+  [GetDistance, itemId],
+  [GetParent, itemId],
+]);
+
+console.log(`${name} (type: 0x${type.toString(16)}, color: 0x${color.toString(16)})`);
+console.log(`Quantity: ${quantity}, Distance: ${distance}, Parent: ${parent}`);
+
+// Check if object exists before using
+if (await IsObjectExists(itemId)) {
+  const tooltip = await GetTooltip(itemId);
+  const notoriety = await GetNotoriety(itemId);
+  console.log(`Tooltip: ${tooltip}, Notoriety: ${notoriety}`);
+}
+```
+
 ### Object Checks
 - `IsYellowHits(objId)` - Check if yellow hits
 - `IsFemale(objId)` - Check if female
 - `IsHouse(objId)` - Check if house
+
+```javascript
+const targetId = await WarTargetID();
+if (targetId) {
+  const hasYellowHits = await IsYellowHits(targetId);
+  const isFemale = await IsFemale(targetId);
+  const isHouse = await IsHouse(targetId);
+  
+  console.log(`Yellow hits: ${hasYellowHits}, Female: ${isFemale}, House: ${isHouse}`);
+}
+```
 
 ## Finding Objects
 
@@ -222,6 +351,21 @@ const results = await parallel_items(items, [
 - `SetFindVertical(value)` - Set vertical find range
 - `GetFindVertical()` - Get vertical find range
 - `Ground()` - Ground container constant (0)
+
+```javascript
+// Set find distance to 35 tiles
+await SetFindDistance(35);
+const currentDistance = await GetFindDistance();
+console.log(`Find distance: ${currentDistance}`);
+
+// Set vertical range to 100
+await SetFindVertical(100);
+const currentVertical = await GetFindVertical();
+console.log(`Find vertical: ${currentVertical}`);
+
+// Use Ground() constant (equals 0)
+const groundItems = await FindType(0xFFFF, Ground());
+```
 
 ### Finding
 
@@ -331,6 +475,25 @@ const backpackApples = await FindTypeEx(0x09D0, 0x0021, Backpack(), false); // â
 - `FindAtCoord(x, y)` - Find items at coordinates
 - `FindNotoriety(objType, notoriety)` - Find by notoriety
 
+```javascript
+// FindCount and FindItem (manual usage - usually auto-called)
+const count = await FindCount();
+const firstItem = await FindItem();
+console.log(`Found ${count} items, first: ${firstItem}`);
+
+// Find items at specific coordinates
+const selfId = await Self();
+const x = await GetX(selfId);
+const y = await GetY(selfId);
+const itemsAtCoord = await FindAtCoord(x, y);
+console.log(`Items at [${x}, ${y}]:`, itemsAtCoord);
+
+// Find by notoriety
+const innocents = await FindNotoriety(0x0190, NOTORIETY.Innocent);
+const enemies = await FindNotoriety(0x0191, NOTORIETY.Enemy);
+console.log(`Innocents: ${innocents.length}, Enemies: ${enemies.length}`);
+```
+
 #### Notoriety Constants
 Available notoriety values for `FindNotoriety`:
 
@@ -352,12 +515,19 @@ const enemies = await FindNotoriety(0x0191, NOTORIETY.Enemy);
   - Automatically awaits promises in `containers` array (e.g., `Backpack()`) - no `await` needed
   
 ```javascript
+// Find full quantity of an item
+const itemId = 12345;
+const fullQuantity = await FindFullQuantity(itemId);
+console.log(`Full quantity: ${fullQuantity}`);
+
+// Find multiple types with multiple colors/containers
 const items = await FindTypesArrayEx(
-  [0x0191, 0x0190], 
-  [0xFFFF, 0x0000], 
+  [0x0191, 0x0190], // Human and creature types
+  [0xFFFF, 0x0000], // Any color or black
   [Backpack(), Ground()], // âœ… No await needed - promises auto-awaited!
-  false
+  false // Don't search in subcontainers
 );
+console.log(`Found ${items.length} items matching criteria`);
 ```
 
 ### Advanced Finding
@@ -421,6 +591,26 @@ const withNames = await FindProps(creatures, [GetName, GetDistance]);
 - `IgnoreReset()` - Clear ignore list
 - `GetIgnoreList()` - Get ignore list
 
+```javascript
+// Ignore self so we don't find ourselves
+const selfId = await Self();
+await Ignore(selfId);
+
+// Ignore specific items/creatures
+const itemId = 12345;
+await Ignore(itemId);
+
+// Check ignore list
+const ignoreList = await GetIgnoreList();
+console.log(`Ignoring ${ignoreList.length} objects`);
+
+// Remove from ignore list
+await IgnoreOff(itemId);
+
+// Clear all ignores
+await IgnoreReset();
+```
+
 ## Actions
 
 ### Interaction
@@ -435,9 +625,75 @@ const withNames = await FindProps(creatures, [GetName, GetDistance]);
 - `Bow()` - Bow gesture
 - `Salute()` - Salute gesture
 
+```javascript
+// Click on an object
+const itemId = 12345;
+await ClickOnObject(itemId);
+
+// Use an object
+await UseObject(itemId);
+
+// Use object by type (tinker tools)
+await UseType(0x1EB8);
+
+// Use from ground
+await UseFromGround(0x0EED, 0xFFFF); // Use gold from ground
+
+// Attack target
+const targetId = await WarTargetID();
+if (targetId) {
+  await Attack(targetId);
+}
+
+// Drag and drop item
+const itemToMove = 12345;
+const success = await DragItem(itemToMove, 10); // Drag 10 items
+if (success) {
+  const selfId = await Self();
+  const x = await GetX(selfId);
+  const y = await GetY(selfId);
+  const z = await GetZ(selfId);
+  await DropItem(itemToMove, x + 1, y + 1, z); // Drop 1 tile away
+}
+
+// Open a door
+const doorId = 67890;
+await OpenDoor(doorId);
+
+// Gestures
+await Bow();
+await Salute();
+```
+
 ### Equipment
 - `WearItem(layer, objId)` - Equip item to layer
 - `ObjAtLayerEx(layer, objId)` - Get object at layer
+
+```javascript
+// Equip a weapon
+const weaponId = 12345;
+await WearItem(LAYERS.Rhand, weaponId);
+
+// Check what's equipped
+const equippedWeapon = await ObjAtLayerEx(LAYERS.Rhand);
+const equippedShield = await ObjAtLayerEx(LAYERS.Lhand);
+const equippedArmor = await ObjAtLayerEx(LAYERS.Torso);
+
+console.log(`Weapon: ${equippedWeapon}, Shield: ${equippedShield}, Armor: ${equippedArmor}`);
+
+// Equip full set
+const [weapon, shield, armor, legs] = await parallel([
+  [FindType, 0x0F47, Backpack()], // Sword
+  [FindType, 0x1BC4, Backpack()], // Shield
+  [FindType, 0x144E, Backpack()], // Armor
+  [FindType, 0x144E, Backpack()], // Legs
+]);
+
+if (weapon.length > 0) await WearItem(LAYERS.Rhand, weapon[0]);
+if (shield.length > 0) await WearItem(LAYERS.Lhand, shield[0]);
+if (armor.length > 0) await WearItem(LAYERS.Torso, armor[0]);
+if (legs.length > 0) await WearItem(LAYERS.Legs, legs[0]);
+```
 
 #### Equipment Layers
 Available layer constants (use with `WearItem` and `ObjAtLayerEx`):
@@ -481,6 +737,29 @@ const equippedWeapon = await ObjAtLayerEx(LAYERS.Rhand);
 - `WarTargetID()` - Get war target ID
 - `Attack(objId)` - Attack target
 
+```javascript
+// Check war mode status
+const inWarMode = await WarMode();
+
+// Toggle war mode
+if (!inWarMode) {
+  await SetWarMode(true);
+  console.log('War mode enabled');
+}
+
+// Get current war target
+const targetId = await WarTargetID();
+if (targetId) {
+  console.log(`War target: ${targetId}`);
+  await Attack(targetId);
+} else {
+  console.log('No war target');
+}
+
+// Disable war mode
+await SetWarMode(false);
+```
+
 ## Targeting
 
 ### Target Selection
@@ -491,6 +770,33 @@ const equippedWeapon = await ObjAtLayerEx(LAYERS.Rhand);
 - `TargetToXYZ(x, y, z)` - Target coordinates
 - `TargetToTile(tileType, x, y)` - Target tile
 
+```javascript
+// Get current target
+const currentTarget = await TargetID();
+console.log(`Current target: ${currentTarget}`);
+
+// Get last target
+const lastTarget = await LastTarget();
+console.log(`Last target: ${lastTarget}`);
+
+// Target an object
+const enemyId = 12345;
+await TargetToObject(enemyId);
+
+// Target coordinates
+const selfId = await Self();
+const x = await GetX(selfId);
+const y = await GetY(selfId);
+const z = await GetZ(selfId);
+await TargetToXYZ(x + 5, y + 5, z);
+
+// Target a tile (floor tile type)
+await TargetToTile(0x400, x + 5, y + 5);
+
+// Cancel target
+await CancelTarget();
+```
+
 ### Wait Target
 - `WaitTargetObject(objId)` - Wait for target on object
 - `WaitTargetSelf()` - Wait for target on self
@@ -499,11 +805,62 @@ const equippedWeapon = await ObjAtLayerEx(LAYERS.Rhand);
 - `WaitTargetGround()` - Wait for target on ground
 - `CancelWaitTarget()` - Cancel wait target
 
+```javascript
+// Cast heal and wait for target on self
+await Cast('heal');
+await WaitTargetSelf();
+await Wait(500);
+
+// Cast heal and wait for target on specific object
+const friendId = 12345;
+await Cast('greater heal');
+await WaitTargetObject(friendId);
+await Wait(500);
+
+// Cast teleport and wait for target on last target
+await Cast('teleport');
+await WaitTargetLast();
+await Wait(500);
+
+// Cast dispel and wait for target on specific type
+await Cast('dispel');
+await WaitTargetType(0x0190, 0xFFFF); // Target humans
+await Wait(500);
+
+// Cast wall of stone and wait for target on ground
+await Cast('wall of stone');
+await WaitTargetGround();
+await Wait(500);
+
+// Cancel wait target
+await CancelWaitTarget();
+```
+
 ## Movement
 
 ### Basic Movement
 - `Step(direction, run)` - Step in direction (0-7, 0=North, 2=East, 4=South, 6=West)
 - `StepQ(direction, run)` - Quick step with queue
+
+```javascript
+// Step north (not running)
+await Step(DIRECTIONS.North, false);
+
+// Step east (running)
+await Step(DIRECTIONS.East, true);
+
+// Step in all directions
+await Step(DIRECTIONS.North, false);
+await Wait(500);
+await Step(DIRECTIONS.East, false);
+await Wait(500);
+await Step(DIRECTIONS.South, false);
+await Wait(500);
+await Step(DIRECTIONS.West, false);
+
+// Quick step (queued)
+await StepQ(DIRECTIONS.Northeast, true);
+```
 
 #### Direction Constants
 Available direction constants:
@@ -544,11 +901,62 @@ await newMoveXYZ(2800, 480, 15, 0, 0, false);
 - `SetBadObject(objType, color, radius)` - Mark object type as bad
 - `ClearBadObjectList()` - Clear bad object list
 
+```javascript
+// Mark a location as bad (to avoid it)
+await SetBadLocation(2800, 480);
+await SetBadLocation(2801, 481);
+
+// Mark a location as good
+await SetGoodLocation(2900, 500);
+
+// Clear all bad locations
+await ClearBadLocationList();
+
+// Mark object type as bad (avoid creatures)
+await SetBadObject(0x0190, 0xFFFF, 5); // Avoid humans within 5 tiles
+
+// Clear bad object list
+await ClearBadObjectList();
+```
+
 ### Pathfinding
 - `GetPathArray(x, y, running, accuracyXY)` - Get 2D path array
 - `GetPathArray3D(x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running)` - Get 3D path array
 - `GetNextStepZ(x1, y1, z1, x2, y2, worldNum, stepZ)` - Get next step Z coordinate
 - `CheckLOS(x1, y1, z1, x2, y2, z2, worldNum, flags, objId)` - Check line of sight
+
+```javascript
+const selfId = await Self();
+const x1 = await GetX(selfId);
+const y1 = await GetY(selfId);
+const z1 = await GetZ(selfId);
+const worldNum = await WorldNum();
+
+// Get 2D path to destination
+const path = await GetPathArray(3000, 500, false, 0);
+console.log(`Path has ${path.length} steps`);
+
+// Get 3D path
+const path3D = await GetPathArray3D(x1, y1, z1, 3000, 500, 0, worldNum, 0, 0, false);
+console.log(`3D path:`, path3D);
+
+// Get next step Z coordinate
+const nextZ = await GetNextStepZ(x1, y1, z1, 3000, 500, worldNum, 1);
+console.log(`Next step Z: ${nextZ}`);
+
+// Check line of sight
+const targetId = await WarTargetID();
+if (targetId) {
+  const [x2, y2, z2] = await parallel([
+    [GetX, targetId],
+    [GetY, targetId],
+    [GetZ, targetId],
+  ]);
+  
+  const hasLOS = await CheckLOS(x1, y1, z1, x2, y2, z2, worldNum, 0, 0);
+  console.log(`Line of sight: ${hasLOS}`);
+}
+```
 
 ## Skills
 
@@ -608,13 +1016,17 @@ Note: Skill names are case-insensitive and should match UO skill names exactly. 
 ```javascript
 // Cast without target (waits for manual targeting)
 await Cast('heal');
-await Cast('greater heal');
-await Cast('teleport');
+await WaitForTarget(3000);
+if (await TargetPresent()) {
+  await TargetToSelf();
+}
 
 // Cast with target object (waits for target cursor, then casts)
 const targetId = await WarTargetID();
-await CastToObj('heal', targetId);
-await CastToObject('greater heal', targetId); // Alias
+if (targetId) {
+  await CastToObj('heal', targetId);
+  await CastToObject('greater heal', targetId); // Alias
+}
 
 // Cast to self
 await CastToSelf('heal');
@@ -622,6 +1034,24 @@ await CastSelf('greater heal'); // Alias
 
 // Or cast by ID
 await CastSpell(4); // heal
+
+// Check if spell ability is active (like chivalry, bushido, etc.)
+const enemyOfOneActive = await IsActiveSpellAbility('enemy of one');
+const confidenceActive = await IsActiveSpellAbility('confidence');
+
+if (!enemyOfOneActive) {
+  await Cast('enemy of one');
+  await WaitForTarget(3000);
+  if (await TargetPresent()) {
+    const enemyId = await WarTargetID();
+    if (enemyId) {
+      await TargetToObject(enemyId);
+    }
+  }
+}
+
+// Also works with spell IDs
+const spell4Active = await IsActiveSpellAbility(4); // heal (though heal isn't an ability)
 ```
 
 ### Available Spell Names
@@ -665,12 +1095,60 @@ await CastSpell(4); // heal
 - `ClearJournal()` - Clear journal
 - `AddToSystemJournal(text)` - Add message to system journal
 
+```javascript
+// Get journal range
+const low = await LowJournal();
+const high = await HighJournal();
+console.log(`Journal entries: ${low} to ${high}`);
+
+// Get last journal message
+const lastMessage = await LastJournalMessage();
+console.log(`Last message: ${lastMessage}`);
+
+// Search for text in journal
+const hasText = await InJournal('You see');
+if (hasText > 0) {
+  console.log(`Found 'You see' at index ${hasText}`);
+}
+
+// Read all journal entries
+for (let i = low; i <= high; i++) {
+  const message = await Journal(i);
+  if (message) {
+    console.log(`[${i}] ${message}`);
+  }
+}
+
+// Add to system journal
+await AddToSystemJournal('Script started');
+
+// Clear journal
+await ClearJournal();
+```
+
 ## Last Actions
 
 - `LastTarget()` - Get last target ID
 - `LastAttack()` - Get last attack ID
 - `LastContainer()` - Get last container ID
 - `LastObject()` - Get last object ID
+
+```javascript
+// Get last actions
+const lastTarget = await LastTarget();
+const lastAttack = await LastAttack();
+const lastContainer = await LastContainer();
+const lastObject = await LastObject();
+
+console.log(`Last target: ${lastTarget}`);
+console.log(`Last attack: ${lastAttack}`);
+console.log(`Last container: ${lastContainer}`);
+console.log(`Last object: ${lastObject}`);
+
+// Use last target for spell casting
+await Cast('heal');
+await WaitTargetLast();
+```
 
 ## Utilities
 
