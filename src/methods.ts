@@ -110,6 +110,7 @@ export function createMethods(protocol) {
     PredictedX: new ScriptMethod(protocol, METHOD_INDICES.PredictedX, [], (buf) => unpackUInt16(buf)),
     PredictedY: new ScriptMethod(protocol, METHOD_INDICES.PredictedY, [], (buf) => unpackUInt16(buf)),
     PredictedZ: new ScriptMethod(protocol, METHOD_INDICES.PredictedZ, [], (buf) => unpackInt8(buf)),
+    Self: new ScriptMethod(protocol, METHOD_INDICES.GetSelfID, [], (buf) => unpackUInt32(buf)),
   };
 
   const returnObj = {
@@ -117,7 +118,7 @@ export function createMethods(protocol) {
     Connected: () => new ScriptMethod(protocol, METHOD_INDICES.GetConnectedStatus, [], (buf) => unpackBool(buf)).call(),
     
     // Self info
-    Self: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfID, [], (buf) => unpackUInt32(buf)).call(),
+    Self: () => methodInstances.Self.call(),
     GetX: (objId) => methodInstances.GetX.call(objId),
     GetY: (objId) => methodInstances.GetY.call(objId),
     GetZ: (objId) => methodInstances.GetZ.call(objId),

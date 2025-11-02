@@ -330,6 +330,7 @@ export class Protocol extends EventEmitter {
             break;
           }
           const value = parser(data, offset);
+          args.push(value);
           offset += argSize;
         } else if (argType === 1 || argType === 2) { // uint/int
           if (offset + 4 > data.length) {
