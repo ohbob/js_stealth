@@ -110,7 +110,7 @@ export declare function createMethods(protocol: any): {
     GetSkillValue: (skillNameOrId: SkillName | string | number) => Promise<any>;
     GetSkillCap: (skillNameOrId: SkillName | string | number) => Promise<any>;
     GetSkillID: (skillName: any) => Promise<any>;
-    Cast: (spellName: SpellName | string, objId?: number | null) => Promise<boolean>;
+    Cast: (spellName: SpellName | string) => Promise<boolean>;
     CastToObj: (spellName: any, objId: any) => Promise<boolean>;
     CastToObject: (spellName: any, objId: any) => Promise<boolean>;
     CastToSelf: (spellName: any) => Promise<boolean>;

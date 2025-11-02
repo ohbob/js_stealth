@@ -384,7 +384,7 @@ export const GetSkillValue = withAutoConnect(async (skillNameOrId) => { return m
 export const GetSkillCap = withAutoConnect(async (skillNameOrId) => { return methods.GetSkillCap(skillNameOrId); });
 export const GetSkillID = withAutoConnect(async (skillName) => { return methods.GetSkillID(skillName); });
 // Spells
-export const Cast = withAutoConnect(async (spellName, objId = null) => { return methods.Cast(spellName, objId); });
+export const Cast = withAutoConnect(async (spellName) => { return methods.Cast(spellName); });
 export const CastToObj = withAutoConnect(async (spellName, objId) => { return methods.CastToObj(spellName, objId); });
 export const CastToObject = withAutoConnect(async (spellName, objId) => { return methods.CastToObject(spellName, objId); });
 export const CastToSelf = withAutoConnect(async (spellName) => { return methods.CastToSelf(spellName); });

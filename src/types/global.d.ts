@@ -3,6 +3,21 @@
 // It declares global functions available after: import './js_stealth';
 
 declare global {
+  // Event names type (from constants.ts)
+  type EventName =
+    | 'eviteminfo' | 'evitemdeleted' | 'evspeech' | 'evdrawgameplayer'
+    | 'evmoverejection' | 'evdrawcontainer' | 'evadditemtocontainer'
+    | 'evaddmultipleitemsincont' | 'evrejectmoveitem' | 'evupdatechar'
+    | 'evdrawobject' | 'evmenu' | 'evmapmessage' | 'evallowrefuseattack'
+    | 'evclilocspeech' | 'evclilocspeechaffix' | 'evunicodespeech'
+    | 'evbuffdebuffsystem' | 'evclientsendresync' | 'evcharanimation'
+    | 'evicqdisconnect' | 'evicqconnect' | 'evicqincomingtext' | 'evicqerror'
+    | 'evincominggump' | 'evtimer1' | 'evtimer2' | 'evwindowsmessage' | 'evsound'
+    | 'evdeath' | 'evquestarrow' | 'evpartyinvite' | 'evmappin' | 'evgumptextentry'
+    | 'evgraphicaleffect' | 'evircincomingtext' | 'evmessengerevent'
+    | 'evsetglobalvar' | 'evupdateobjstats' | 'evglobalchat' | 'evwardamage'
+    | 'evcontextmenu';
+
   // Spell and skill type aliases (inline for global scope)
   type SpellName =
     | 'clumsy' | 'create food' | 'feeblemind' | 'heal' | 'magic arrow' | 'night sight' | 'reactive armor' | 'weaken'
@@ -37,7 +52,7 @@ declare global {
   // Connection
   function connect(host?: string | null, port?: number | null): Promise<void>;
   function disconnect(): Promise<void>;
-  function on(event: string, callback: (...args: any[]) => void): void;
+  function on(event: EventName, callback: (...args: any[]) => void): void;
 
   // Basic
   function Self(): Promise<number>;

@@ -53,6 +53,51 @@ on('evspeech', (data) => {
 });
 ```
 
+### Available Events
+All event names are available as constants. Common events:
+
+**Item Events:**
+- `'eviteminfo'` - Item information received
+- `'evitemdeleted'` - Item deleted
+- `'evadditemtocontainer'` - Item added to container
+- `'evaddmultipleitemsincont'` - Multiple items added
+- `'evrejectmoveitem'` - Item move rejected
+
+**Speech/Communication:**
+- `'evspeech'` - Speech event (most common)
+- `'evclilocspeech'` - Cliloc speech
+- `'evclilocspeechaffix'` - Cliloc speech with affix
+- `'evunicodespeech'` - Unicode speech
+- `'evglobalchat'` - Global chat message
+
+**Character/Movement:**
+- `'evdrawgameplayer'` - Player drawn
+- `'evmoverejection'` - Movement rejected
+- `'evupdatechar'` - Character updated
+- `'evcharanimation'` - Character animation
+
+**UI/Interaction:**
+- `'evmenu'` - Menu event
+- `'evmapmessage'` - Map message
+- `'evincominggump'` - Gump received
+- `'evgumptextentry'` - Gump text entry
+- `'evcontextmenu'` - Context menu
+
+**Combat:**
+- `'evallowrefuseattack'` - Attack allowed/refused
+- `'evwardamage'` - War damage
+- `'evdeath'` - Death event
+
+**System:**
+- `'evtimer1'`, `'evtimer2'` - Timer events
+- `'evbuffdebuffsystem'` - Buff/debuff system
+- `'evupdateobjstats'` - Object stats updated
+- `'evsetglobalvar'` - Global variable set
+- `'evgraphicaleffect'` - Graphical effect
+- `'evsound'` - Sound event
+
+**Complete list:** See `EVENTS` constant - all event names are exported and available globally after import.
+
 ## Parallel Operations
 
 ### `parallel(commands)`
@@ -204,6 +249,23 @@ const backpackApples = await FindTypeEx(0x09D0, 0x0021, Backpack(), false); // â
 - `FindItem()` - Get first found item
 - `FindAtCoord(x, y)` - Find items at coordinates
 - `FindNotoriety(objType, notoriety)` - Find by notoriety
+
+#### Notoriety Constants
+Available notoriety values for `FindNotoriety`:
+
+```javascript
+NOTORIETY.Innocent     // 1 - Blue
+NOTORIETY.Ally         // 2 - Green
+NOTORIETY.Attackable   // 3 - Grey
+NOTORIETY.Criminal     // 4 - Grey
+NOTORIETY.Enemy        // 5 - Orange/Red
+NOTORIETY.Murderer     // 6 - Red
+NOTORIETY.Invulnerable // 7 - Yellow
+
+// Usage
+const innocents = await FindNotoriety(0x0190, NOTORIETY.Innocent);
+const enemies = await FindNotoriety(0x0191, NOTORIETY.Enemy);
+```
 - `FindFullQuantity(objId)` - Get full quantity of found item
 - `FindTypesArrayEx(objTypes, colors, containers, inSub)` - Find multiple types with multiple colors/containers
   - Automatically awaits promises in `containers` array (e.g., `Backpack()`) - no `await` needed
@@ -296,6 +358,43 @@ const withNames = await FindProps(creatures, [GetName, GetDistance]);
 - `WearItem(layer, objId)` - Equip item to layer
 - `ObjAtLayerEx(layer, objId)` - Get object at layer
 
+#### Equipment Layers
+Available layer constants (use with `WearItem` and `ObjAtLayerEx`):
+
+```javascript
+// Core equipment
+LAYERS.Rhand    // 0x01 - Right hand
+LAYERS.Lhand    // 0x02 - Left hand
+LAYERS.Shoes    // 0x03
+LAYERS.Pants    // 0x04
+LAYERS.Shirt    // 0x05
+LAYERS.Hat      // 0x06
+LAYERS.Gloves   // 0x07
+LAYERS.Ring     // 0x08
+LAYERS.Neck     // 0x0A
+LAYERS.Hair     // 0x0B
+LAYERS.Waist    // 0x0C
+LAYERS.Torso    // 0x0D
+LAYERS.Arms     // 0x13
+LAYERS.Cloak    // 0x14
+LAYERS.Bpack    // 0x15 - Backpack
+LAYERS.Robe     // 0x16
+LAYERS.Legs     // 0x18
+
+// Special
+LAYERS.Talisman // 0x09
+LAYERS.Brace    // 0x0E
+LAYERS.Beard    // 0x10
+LAYERS.TorsoH   // 0x11
+LAYERS.Ear      // 0x12
+LAYERS.Eggs     // 0x17
+LAYERS.Horse    // 0x19
+
+// Usage
+await WearItem(LAYERS.Rhand, weaponId);
+const equippedWeapon = await ObjAtLayerEx(LAYERS.Rhand);
+```
+
 ### War Mode
 - `SetWarMode(value)` - Set war mode on/off
 - `WarTargetID()` - Get war target ID
@@ -324,6 +423,24 @@ const withNames = await FindProps(creatures, [GetName, GetDistance]);
 ### Basic Movement
 - `Step(direction, run)` - Step in direction (0-7, 0=North, 2=East, 4=South, 6=West)
 - `StepQ(direction, run)` - Quick step with queue
+
+#### Direction Constants
+Available direction constants:
+
+```javascript
+DIRECTIONS.North      // 0
+DIRECTIONS.Northeast  // 1
+DIRECTIONS.East       // 2
+DIRECTIONS.Southeast  // 3
+DIRECTIONS.South      // 4
+DIRECTIONS.Southwest  // 5
+DIRECTIONS.West       // 6
+DIRECTIONS.Northwest  // 7
+
+// Usage
+await Step(DIRECTIONS.North, false);
+await Step(DIRECTIONS.East, true); // run
+```
 
 ### Advanced Movement
 - `MoveXY(x, y, accuracyXY, running, exact)` - Move to X, Y coordinates
@@ -488,6 +605,31 @@ await Wait(1000); // Wait 1 second
 
 ```javascript
 on('evspeech', (data) => {
+  console.log('Speech event:', data);
+});
+```
+
+## Constants
+
+All constants are exported and available globally after importing `js_stealth`:
+
+### Available Constants
+
+- **`EVENTS`** - Array of all available event names for `on()` function
+- **`LAYERS`** - Equipment layer constants (e.g., `LAYERS.Rhand`, `LAYERS.Cloak`)
+- **`DIRECTIONS`** - Movement direction constants (e.g., `DIRECTIONS.North`, `DIRECTIONS.East`)
+- **`NOTORIETY`** - Notoriety constants (e.g., `NOTORIETY.Innocent`, `NOTORIETY.Enemy`)
+- **`SPELLS`** - Spell name to ID mapping (used internally, but available for reference)
+- **`SKILL_NAMES`** - Array of all valid skill names
+
+```javascript
+import './js_stealth';
+
+// Use constants directly
+await WearItem(LAYERS.Rhand, weaponId);
+await Step(DIRECTIONS.North, false);
+const innocents = await FindNotoriety(0x0190, NOTORIETY.Innocent);
+on(EVENTS[2], (data) => { // 'evspeech'
   console.log('Speech event:', data);
 });
 ```

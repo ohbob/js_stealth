@@ -3,6 +3,21 @@
 // It declares global functions available after: import './js_stealth';
 
 declare global {
+  // Event names type (from constants.ts)
+  type EventName =
+    | 'eviteminfo' | 'evitemdeleted' | 'evspeech' | 'evdrawgameplayer'
+    | 'evmoverejection' | 'evdrawcontainer' | 'evadditemtocontainer'
+    | 'evaddmultipleitemsincont' | 'evrejectmoveitem' | 'evupdatechar'
+    | 'evdrawobject' | 'evmenu' | 'evmapmessage' | 'evallowrefuseattack'
+    | 'evclilocspeech' | 'evclilocspeechaffix' | 'evunicodespeech'
+    | 'evbuffdebuffsystem' | 'evclientsendresync' | 'evcharanimation'
+    | 'evicqdisconnect' | 'evicqconnect' | 'evicqincomingtext' | 'evicqerror'
+    | 'evincominggump' | 'evtimer1' | 'evtimer2' | 'evwindowsmessage' | 'evsound'
+    | 'evdeath' | 'evquestarrow' | 'evpartyinvite' | 'evmappin' | 'evgumptextentry'
+    | 'evgraphicaleffect' | 'evircincomingtext' | 'evmessengerevent'
+    | 'evsetglobalvar' | 'evupdateobjstats' | 'evglobalchat' | 'evwardamage'
+    | 'evcontextmenu';
+
   // Spell and skill type aliases (inline for global scope)
   type SpellName =
     | 'clumsy' | 'create food' | 'feeblemind' | 'heal' | 'magic arrow' | 'night sight' | 'reactive armor' | 'weaken'
@@ -37,7 +52,7 @@ declare global {
   // Connection
   function connect(host?: string | null, port?: number | null): Promise<void>;
   function disconnect(): Promise<void>;
-  function on(event: string, callback: (...args: any[]) => void): void;
+  function on(event: EventName, callback: (...args: any[]) => void): void;
 
   // Basic
   function Self(): Promise<number>;
@@ -65,9 +80,10 @@ declare global {
   function SetFindDistance(Value: number): Promise<void>;
   // ObjType can be number or hex format (e.g., 401 or 0x0191)
   // Color can be number or hex format (e.g., 65535 or 0xFFFF)
-  // Container can be number, hex, or result of Ground()/Backpack() (e.g., 0, 0x40000000, Ground())
-  function FindType(ObjType: number, Container?: number | null): Promise<number[]>;
-  function FindTypeEx(ObjType: number, Color: number, Container?: number, InSub?: boolean): Promise<number[]>;
+  // Container can be number, hex, or result of Ground()/Backpack() (e.g., 0, 0x40000000, Ground(), Backpack())
+  //   Note: Backpack() returns Promise<number> - functions automatically await promises
+  function FindType(ObjType: number, Container?: number | null | Promise<number>): Promise<number[]>;
+  function FindTypeEx(ObjType: number, Color: number, Container?: number | Promise<number>, InSub?: boolean): Promise<number[]>;
   function GetFindedList(): Promise<number[]>;
 
   // Targeting
@@ -131,7 +147,8 @@ declare global {
         // Find items and get their properties in one call
         // objTypes/objType: Can be number or hex format (e.g., 401, 0x0191, [401, 0x0191])
         // colors/color: Can be number or hex format (e.g., 65535, 0xFFFF, [0xFFFF, 0x0000])
-        // containers/container: Can be number, hex, or result of Ground()/Backpack() (e.g., 0, 0x40000000, Ground())
+        // containers/container: Can be number, hex, or result of Ground()/Backpack() (e.g., 0, 0x40000000, Ground(), Backpack())
+        //   Note: Backpack() returns Promise<number> - Find() automatically awaits promises in containers array
         // filters: Optional function or array of functions to filter results (item => boolean)
         //   All filters must return true for an item to be included (AND logic)
         //   Example: filters: [(item) => item.hp > 0 && item.distance < 1000]
@@ -140,8 +157,8 @@ declare global {
           objType?: number; // e.g., 401 or 0x0191 - number or hex format
           colors?: number[]; // e.g., [65535, 0xFFFF] or [0xFFFF, 0x0000] - numbers or hex format
           color?: number; // e.g., 65535 or 0xFFFF - number or hex format
-          containers?: number[]; // e.g., [0, Ground()] or [0x40000000] - numbers, hex, or function results
-          container?: number; // e.g., 0, Ground(), or 0x40000000 - number, hex, or function result
+          containers?: Array<number | Promise<number>>; // e.g., [0, Ground(), Backpack()] - numbers, hex, or promises (auto-awaited)
+          container?: number | Promise<number>; // e.g., 0, Ground(), or Backpack() - number, hex, or promise (auto-awaited)
           inSub?: boolean;
           operations: Function[];
           keys?: string[];
@@ -159,7 +176,7 @@ declare global {
   function CalcDir(Xfrom: number, Yfrom: number, Xto: number, Yto: number): DirectionValue;
 
   // Spells
-  function Cast(SpellName: SpellName, ObjID?: number | null): Promise<boolean>;
+  function Cast(SpellName: SpellName): Promise<boolean>;
   function CastToObj(SpellName: SpellName, ObjID: number): Promise<boolean>;
   function CastToSelf(SpellName: SpellName): Promise<boolean>;
   function CastSelf(SpellName: SpellName): Promise<boolean>;
@@ -288,8 +305,9 @@ declare global {
   function FindQuantity(ObjID: number): Promise<number>;
   // ObjTypes array can contain numbers or hex format (e.g., [401, 0x0191])
   // Colors array can contain numbers or hex format (e.g., [65535, 0xFFFF])
-  // Containers array can contain numbers, hex, or function results (e.g., [0, Ground()])
-  function FindTypesArrayEx(ObjTypes: number[], Colors: number[], Containers: number[], InSub: boolean): Promise<number[]>;
+  // Containers array can contain numbers, hex, or function results (e.g., [0, Ground(), Backpack()])
+  //   Note: Backpack() returns Promise<number> - function automatically awaits promises in array
+  function FindTypesArrayEx(ObjTypes: number[], Colors: number[], Containers: Array<number | Promise<number>>, InSub: boolean): Promise<number[]>;
 
   // Container/Item
   function SetCatchBag(ObjectID: number): Promise<void>;
