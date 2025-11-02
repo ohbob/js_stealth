@@ -195,21 +195,10 @@ export async function on(event, callback) {
   const hadCallback = protocol.callbacks.has(eventIndex);
   protocol.callbacks.set(eventIndex, callback);
   
-  // Also register on EventEmitter for convenience
-  protocol.on(event, callback);
-  
   // Tell Stealth to send events for this index (only if no callback was registered before)
   // This matches Python's behavior: only call SetEventProc if conn.callbacks[index] was None
   if (!hadCallback) {
-    try {
-      await methods.SetEventProc(eventIndex);
-      console.log(`Event ${event} (index ${eventIndex}) registered successfully`);
-    } catch (err) {
-      console.error(`Failed to register event ${event} (index ${eventIndex}):`, err);
-      throw err;
-    }
-  } else {
-    console.log(`Event ${event} (index ${eventIndex}) callback updated (already registered with Stealth)`);
+    await methods.SetEventProc(eventIndex);
   }
 }
 

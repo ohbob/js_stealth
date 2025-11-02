@@ -13,7 +13,13 @@ export declare class Protocol extends EventEmitter {
     results: Map<number, Buffer>;
     pendingPromises: Map<number, PendingPromise>;
     callbacks: Map<number, (...args: any[]) => void>;
+    private _handlers;
+    private _backgroundPollLoop;
+    private _pollInterval;
     constructor(socket: Socket);
+    private _startBackgroundPolling;
+    private _stopBackgroundPolling;
+    private _rejectAllPending;
     methodId(): number;
     sendPacket(type: number, methodIndex: number, id: number, data?: Buffer): void;
     sendPacketsBatch(packets: Buffer[]): void;
@@ -25,5 +31,6 @@ export declare class Protocol extends EventEmitter {
     private _handleEvent;
     waitForResult(id: number, timeout?: number): Promise<Buffer>;
     on(event: string, callback: (...args: any[]) => void): this;
+    processReceives(): void;
 }
 export {};

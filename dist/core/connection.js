@@ -105,6 +105,9 @@ export async function connect(host = HOST, port = null) {
         socket.on('connect', () => {
             clearTimeout(connectTimeout);
             socket.setNoDelay(true); // Disable Nagle's algorithm for low latency
+            // Don't pause the socket - we need to actively receive events
+            // Python uses non-blocking socket and actively calls recv()
+            socket.setKeepAlive(true, 60000); // Keep connection alive
             const protocol = new Protocol(socket);
             const data = Buffer.concat([
                 packUInt16(5),

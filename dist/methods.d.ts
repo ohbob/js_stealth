@@ -35,7 +35,7 @@ export declare function createMethods(protocol: any): {
     UseType: (objType: any, color?: number) => Promise<any>;
     UseFromGround: (objType: any, color?: number) => Promise<any>;
     Attack: (objId: any) => Promise<any>;
-    Wait: (ms: any) => Promise<unknown>;
+    Wait: (ms: any) => Promise<void>;
     Str: () => Promise<any>;
     Int: () => Promise<any>;
     Dex: () => Promise<any>;
@@ -377,7 +377,7 @@ export declare function createMethods(protocol: any): {
     MessengerSetToken: (messengerNum: any, token: any) => Promise<any>;
     MessengerGetName: (messengerNum: any) => Promise<any>;
     MessengerSendMessage: (messengerNum: any, recipient: any, message: any) => Promise<any>;
-    SetEventProc: (eventIndex: any) => Promise<any>;
+    SetEventProc: (eventIndex: any) => Promise<void>;
     ClearEventProc: (eventIndex: any) => Promise<any>;
     GetStaticArtBitmap: (id: any, hue: any) => Promise<any>;
     PrintScriptMethodsList: (fileName: any, sortedList: any) => Promise<any>;

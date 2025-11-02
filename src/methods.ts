@@ -15,8 +15,15 @@ class ScriptMethod {
   }
 
   async call(...args) {
-    // Handle pause
+    // CRITICAL: Process receives BEFORE checking pause (matching Python's ScriptMethod.__call__)
+    // Python calls conn.receive() FIRST to check pause or events
+    // This is what makes events arrive - receive() is called before every method
+    this.protocol.processReceives();
+    
+    // Handle pause (Python checks pause after receive())
     while (this.protocol.pause) {
+      // Process receives during pause too (Python does this)
+      this.protocol.processReceives();
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
@@ -142,9 +149,33 @@ export function createMethods(protocol) {
     UseFromGround: (objType, color = 0xFFFF) => new ScriptMethod(protocol, METHOD_INDICES.UseFromGround, [packUInt16, packUInt16], (buf) => unpackUInt32(buf)).call(objType, color),
     Attack: (objId) => new ScriptMethod(protocol, METHOD_INDICES.Attack, [packUInt32], (buf) => unpackUInt32(buf)).call(objId),
     
-    // Wait - method 0 is special (doesn't send to server, just waits)
-    Wait: (ms) => {
-      return new Promise(resolve => setTimeout(resolve, ms));
+    // Wait - method 0 is special in Python: it calls receive() but doesn't send anything
+    // Python's Wait() calls _wait() (method 0) in a loop - each call triggers receive() which processes events
+    Wait: async (ms) => {
+      // Python's Wait() implementation:
+      //   end = time.time() + WaitTimeMS / 1000
+      //   while time.time() < end:
+      //       _wait()  # calls receive() before checking if index is 0
+      //       time.sleep(.005)
+      //   else:
+      //       _wait()  # final call
+      // 
+      // The key: ScriptMethod.__call__() calls receive() BEFORE checking if index is 0
+      // So we need to manually trigger receive() during our wait loop
+      const end = Date.now() + ms;
+      
+      while (Date.now() < end) {
+        // Manually trigger receive() processing (like Python's ScriptMethod does before sending)
+        // Since method 0 doesn't send, we just process receives
+        // This is critical - Python's _wait() calls receive() which processes events
+        protocol.processReceives();
+        
+        // Sleep 5ms (matching Python's sleep(.005))
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      
+      // Final receive() call (matching Python's else clause)
+      protocol.processReceives();
     },
     
     // Stats (player only, no args)
@@ -938,7 +969,10 @@ export function createMethods(protocol) {
     MessengerSendMessage: (messengerNum, recipient, message) => new ScriptMethod(protocol, METHOD_INDICES.MessengerSendMessage, [packUInt8, packString, packString], (buf) => unpackUInt32(buf)).call(messengerNum, recipient, message),
     
     // Missing methods
-    SetEventProc: (eventIndex) => new ScriptMethod(protocol, METHOD_INDICES.SetEventProc, [packUInt8], null).call(eventIndex),
+    SetEventProc: async (eventIndex) => {
+      const method = new ScriptMethod(protocol, METHOD_INDICES.SetEventProc, [packUInt8], null);
+      await method.call(eventIndex);
+    },
     ClearEventProc: (eventIndex) => new ScriptMethod(protocol, METHOD_INDICES.ClearEventProc, [packUInt8], null).call(eventIndex),
     GetStaticArtBitmap: (id, hue) => {
       const method = new ScriptMethod(protocol, METHOD_INDICES.GetStaticArtBitmap, [packUInt16, packUInt16], (buf) => buf);

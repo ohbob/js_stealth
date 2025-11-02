@@ -164,6 +164,7 @@ declare global {
           keys?: string[];
           numConnections?: number;
           filters?: ((item: { id: number; [key: string]: any }) => boolean) | Array<(item: { id: number; [key: string]: any }) => boolean>; // Filter functions applied after getting properties (works even with empty operations)
+          properties?: Function[]; // Additional properties to get after filtering (runs FindProps on filtered results, executed after filters)
         }): Promise<Array<{ id: number; [key: string]: any }>>;
 
   // Movement

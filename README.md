@@ -224,6 +224,87 @@ const results = await parallel_items(items, [
 - `Ground()` - Ground container constant (0)
 
 ### Finding
+
+#### Find()
+
+Finds items and optionally gets their properties in one call. Supports filtering and getting additional properties after filtering.
+
+**Basic usage:**
+
+```javascript
+// Find items with basic properties
+const creatures = await Find({
+  objTypes: [0xFFFF],              // Find items of ANY of these types
+  colors: [0xFFFF],                // With ANY of these colors
+  containers: [Ground()],          // In ANY of these containers
+  operations: [GetHP, GetDistance] // Get properties: hp, distance
+});
+// Returns: [{ id: 123, hp: 100, distance: 50 }, { id: 456, hp: 75, distance: 120 }, ...]
+```
+
+**With filters:**
+
+```javascript
+const healthyCreatures = await Find({
+  objTypes: [0xFFFF],
+  operations: [GetHP],
+  filters: [(item) => item.hp > 0 && item.hp < 100] // Only creatures with HP between 0 and 100
+});
+```
+
+**With properties (runs FindProps after filters):**
+
+```javascript
+// First get HP, filter by HP > 0, then get additional properties on filtered results
+const creaturesDetails = await Find({
+  objTypes: [0xFFFF],
+  operations: [GetHP],                              // Get HP first
+  filters: [(item) => item.hp > 0],                // Filter by HP > 0
+  properties: [GetName, GetNotoriety, GetX, GetY]  // Then get these properties on filtered results
+});
+// Returns: [{ id: 123, hp: 100, name: 'a drake', notoriety: 4, x: 100, y: 200 }, ...]
+```
+
+**Parameters:**
+- `objTypes` or `objType`: Array or single number/hex (e.g., `[0x190, 0x191]` or `0x190`)
+- `colors` or `color`: Array or single number/hex (default: `[0xFFFF]` - any color)
+- `containers` or `container`: Array or single container (numbers, hex, or `Ground()`, `Backpack()` - promises auto-awaited)
+- `operations`: Optional array of functions to execute on found items (e.g., `[GetX, GetY, GetHP]`)
+  - If omitted or empty, returns objects with just `{ id }` properties
+  - Keys are auto-derived from function names (e.g., `GetX` → `x`, `GetName` → `name`)
+- `keys`: Optional custom keys array (auto-derived if omitted)
+- `filters`: Optional function or array of functions to filter results (applied after operations)
+  - All filters must return `true` for an item to be included (AND logic)
+- `properties`: Optional array of functions to get additional properties after filtering (runs `FindProps` on filtered results)
+  - Executed after filters, so you can filter first, then get expensive properties on fewer items
+- `numConnections`: Number of parallel connections (default: 16)
+
+**Examples:**
+
+```javascript
+// Find all items (just IDs)
+const allItems = await Find({ objTypes: [0xFFFF], colors: [0xFFFF] });
+// Returns: [{ id: 123 }, { id: 456 }, ...]
+
+// Find with properties
+const items = await Find({
+  objTypes: [0x0191, 0x0190],
+  operations: [GetName, GetQuantity],
+  filters: [(item) => item.quantity > 0]
+});
+// Returns: [{ id: 123, name: 'Apple', quantity: 5 }, ...]
+
+// Find, filter, then get additional properties
+const nearbyCreatures = await Find({
+  objTypes: [0xFFFF],
+  operations: [GetDistance, GetHP],
+  filters: [
+    (item) => item.distance < 100,  // Filter by distance first
+    (item) => item.hp > 0           // Then by HP
+  ],
+  properties: [GetName, GetNotoriety, GetType] // Get these only on filtered results
+});
+```
 - `FindType(objType, container)` - Find objects by type
   - Returns array of object IDs (automatically calls GetFindedList)
   - `container` defaults to backpack if null, use `Ground()` for ground

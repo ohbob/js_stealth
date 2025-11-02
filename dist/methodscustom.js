@@ -219,9 +219,10 @@ export async function FindProps(items, operations, keys, numConnections = 16) {
 //   Find({ objTypes: [0x190, 0x191], colors: [0xFFFF, 0x0000], containers: [Backpack(), Ground()], operations: [GetX, GetY] }) // multiple values (Backpack() promise auto-awaited)
 //   Find({ objTypes: [0x190], operations: [GetX, GetY], keys: ['x', 'y'] }) // custom keys (optional, auto-derived if omitted)
 //   Find({ objTypes: [0xFFFF], operations: [GetHP, GetDistance], filters: [(item) => item.hp > 0 && item.distance < 1000] }) // with filters
+//   Find({ objTypes: [0xFFFF], operations: [GetHP], filters: [(item) => item.hp > 0], properties: [GetName, GetNotoriety] }) // with properties (runs FindProps after filters)
 export async function Find(options) {
     // Support both object and legacy positional arguments
-    let objTypes, colors, containers, inSub, operations, keys, numConnections, filters;
+    let objTypes, colors, containers, inSub, operations, keys, numConnections, filters, properties;
     if (typeof options === 'object' && !Array.isArray(options)) {
         // New friendly API with options object
         const objTypeValue = options.objTypes || options.objType;
@@ -235,10 +236,11 @@ export async function Find(options) {
         keys = options.keys || null;
         numConnections = options.numConnections || 16;
         filters = options.filters || null;
+        properties = options.properties || null; // New: properties to get after filtering
     }
     else {
         // Legacy positional API for backwards compatibility
-        [objTypes, colors, containers, inSub, operations, keys = null, numConnections = 16] = arguments;
+        [objTypes, colors, containers, inSub, operations, keys = null, numConnections = 16, filters = null, properties = null] = arguments;
     }
     if (!objTypes) {
         throw new Error('Find requires objTypes');
@@ -333,6 +335,11 @@ export async function Find(options) {
                 }
             });
         });
+    }
+    // If properties are specified, run FindProps on filtered results
+    // This executes after filters, so you can filter first, then get additional properties
+    if (properties && properties.length > 0 && results.length > 0) {
+        results = await FindProps(results, properties, undefined, numConnections);
     }
     // Cleanup: Close excess connections after Find completes (async, don't block)
     // This prevents connection pool from growing indefinitely and causing timeouts
