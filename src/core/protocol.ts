@@ -132,8 +132,23 @@ export class Protocol extends EventEmitter {
       }
     }, 5); // Poll every 5ms (matching Python's receive() frequency of ~0.005s)
     
+    // Unref the interval so it doesn't keep the process alive
+    if (this._backgroundPollLoop && typeof this._backgroundPollLoop.unref === 'function') {
+      this._backgroundPollLoop.unref();
+    }
   }
 
+  stopPolling() {
+    if (this._backgroundPollLoop) {
+      clearInterval(this._backgroundPollLoop);
+      this._backgroundPollLoop = null;
+    }
+    if (this._pollInterval) {
+      clearInterval(this._pollInterval);
+      this._pollInterval = null;
+    }
+  }
+  
   private _stopBackgroundPolling() {
     if (this._backgroundPollLoop) {
       clearInterval(this._backgroundPollLoop);
@@ -468,7 +483,7 @@ export class Protocol extends EventEmitter {
         }
 
         // Timeout check
-        if (Date.now() - startTime > timeout) {
+        if (timeout && Date.now() - startTime > timeout) {
           if (this._pollInterval) {
             clearInterval(this._pollInterval);
             this._pollInterval = null;
@@ -478,6 +493,11 @@ export class Protocol extends EventEmitter {
           return;
         }
       }, 5); // Poll every 5ms like Python's 0.005s sleep
+      
+      // Unref the interval so it doesn't keep the process alive
+      if (this._pollInterval && typeof this._pollInterval.unref === 'function') {
+        this._pollInterval.unref();
+      }
     });
   }
 

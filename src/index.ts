@@ -146,22 +146,21 @@ function setupAutoDisconnect() {
   // The 'beforeExit' event fires when Node.js would exit if there were no more work
   // Open sockets keep the event loop alive, so we disconnect them first
   let isDisconnecting = false;
-  process.on('beforeExit', (code) => {
+  process.on('beforeExit', async (code) => {
     // Only disconnect if we're connected and not already disconnecting
-    if (!isDisconnecting && protocol && protocol.socket && !protocol.socket.destroyed) {
+    if (!isDisconnecting && (protocol || connectionPool.length > 0)) {
       isDisconnecting = true;
-      // Disconnect and then exit
-      disconnect()
-        .then(() => {
-          isDisconnecting = false;
-          // After disconnect, exit immediately
-          process.exit(code || 0);
-        })
-        .catch((e) => {
-          isDisconnecting = false;
-          // If disconnect fails, force exit anyway
-          process.exit(code || 0);
-        });
+      try {
+        // Disconnect and then exit
+        await disconnect();
+        isDisconnecting = false;
+        // After disconnect, exit immediately
+        process.exit(code || 0);
+      } catch (e) {
+        isDisconnecting = false;
+        // If disconnect fails, force exit anyway
+        process.exit(code || 0);
+      }
     } else {
       // No connection or already disconnecting, safe to exit
       process.exit(code || 0);
@@ -241,6 +240,10 @@ export async function on(event, callback) {
 
 export async function disconnect() {
   if (protocol && protocol.socket) {
+    // Stop polling first to clear intervals
+    if (protocol.stopPolling) {
+      protocol.stopPolling();
+    }
     // Clear all pending timeouts first
     if (protocol.pendingPromises) {
       for (const [id, promise] of protocol.pendingPromises) {
@@ -363,7 +366,7 @@ export const GetFindedList = withAutoConnect(async function() { return methods.G
 // Additional object methods
 export const GetAltName = withAutoConnect(async (objId) => { return methods.GetAltName(objId); });
 export const GetTitle = withAutoConnect(async (objId) => { return methods.GetTitle(objId); });
-export const GetTooltip = withAutoConnect(async (objId) => { return methods.GetTooltip(objId); });
+export const GetTooltip = withAutoConnect(async (objId) => { return methods.GetTooltip(objId); }, 'GetTooltip');
 export const GetStr = withAutoConnect(async (objId) => { return methods.GetStr(objId); });
 export const GetInt = withAutoConnect(async (objId) => { return methods.GetInt(objId); });
 export const GetDex = withAutoConnect(async (objId) => { return methods.GetDex(objId); });
@@ -375,7 +378,7 @@ export const GetDirection = withAutoConnect(async (objId) => { return methods.Ge
 export const IsObjectExists = withAutoConnect(async (objId) => { return methods.IsObjectExists(objId); });
 
 // Actions
-export const UseObject = withAutoConnect(async (objId) => { return methods.UseObject(objId); });
+export const UseObject = withAutoConnect(async (objId) => { return methods.UseObject(objId); }, 'UseObject');
 export const UseType = withAutoConnect(async (objType, color) => { return methods.UseType(objType, color); });
 export const UseFromGround = withAutoConnect(async (objType, color) => { return methods.UseFromGround(objType, color); });
 export const Attack = withAutoConnect(async (objId) => { return methods.Attack(objId); });
@@ -440,7 +443,7 @@ export const FindNotoriety = withAutoConnect(async (objType, notoriety) => { ret
 export const FindAtCoord = withAutoConnect(async (x, y) => { return methods.FindAtCoord(x, y); });
 export const FindItem = withAutoConnect(async () => { return methods.FindItem(); });
 export const FindCount = withAutoConnect(async () => { return methods.FindCount(); });
-export const FindFullQuantity = withAutoConnect(async (objId) => { return methods.FindFullQuantity(objId); });
+export const FindFullQuantity = withAutoConnect(async () => { return methods.FindFullQuantity(); });
 export const Ignore = withAutoConnect(async (objId) => { return methods.Ignore(objId); }, 'Ignore');
 export const IgnoreOff = withAutoConnect(async (objId) => { return methods.IgnoreOff(objId); }, 'IgnoreOff');
 export const IgnoreReset = withAutoConnect(async () => { return methods.IgnoreReset(); }, 'IgnoreReset');
@@ -456,11 +459,11 @@ export const ClearJournal = withAutoConnect(async () => { return methods.ClearJo
 export const AddToSystemJournal = withAutoConnect(async (text) => { return methods.AddToSystemJournal(text); });
 
 // Skills
-export const UseSkill = withAutoConnect(async (skillNameOrId) => { return methods.UseSkill(skillNameOrId); });
-export const UseSkillID = withAutoConnect(async (skillId) => { return methods.UseSkillID(skillId); });
-export const GetSkillValue = withAutoConnect(async (skillNameOrId) => { return methods.GetSkillValue(skillNameOrId); });
-export const GetSkillCap = withAutoConnect(async (skillNameOrId) => { return methods.GetSkillCap(skillNameOrId); });
-export const GetSkillID = withAutoConnect(async (skillName) => { return methods.GetSkillID(skillName); });
+export const UseSkill = withAutoConnect(async (skillNameOrId) => { return methods.UseSkill(skillNameOrId); }, 'UseSkill');
+export const UseSkillID = withAutoConnect(async (skillId) => { return methods.UseSkillID(skillId); }, 'UseSkillID');
+export const GetSkillValue = withAutoConnect(async (skillNameOrId) => { return methods.GetSkillValue(skillNameOrId); }, 'GetSkillValue');
+export const GetSkillCap = withAutoConnect(async (skillNameOrId) => { return methods.GetSkillCap(skillNameOrId); }, 'GetSkillCap');
+export const GetSkillID = withAutoConnect(async (skillName) => { return methods.GetSkillID(skillName); }, 'GetSkillID');
 
 // Spells
 export const Cast = withAutoConnect(async (spellName) => { return methods.Cast(spellName); });
@@ -498,8 +501,8 @@ export const WearItem = withAutoConnect(async (layer, objId) => { return methods
 export const ObjAtLayerEx = withAutoConnect(async (layer, objId) => { return methods.ObjAtLayerEx(layer, objId); });
 
 // Movement
-export const Step = withAutoConnect(async (direction, run) => { return methods.Step(direction, run); });
-export const StepQ = withAutoConnect(async (direction, run) => { return methods.StepQ(direction, run); });
+export const Step = withAutoConnect(async (direction, run, ensureDirection) => { return methods.Step(direction, run, ensureDirection); });
+export const StepQ = withAutoConnect(async (direction, run, ensureDirection) => { return methods.StepQ(direction, run, ensureDirection); });
 export const MoveXYZ = withAutoConnect(async (x, y, z, accuracyXY, accuracyZ, running) => { return methods.MoveXYZ(x, y, z, accuracyXY, accuracyZ, running); });
 export const MoveXY = withAutoConnect(async (x, y, accuracyXY, running, exact) => { return methods.MoveXY(x, y, accuracyXY, running, exact); });
 export const newMoveXY = withAutoConnect(async (x, y, optimized, accuracy, running) => { return methods.newMoveXY(x, y, optimized, accuracy, running); });
@@ -526,8 +529,8 @@ export const NumGumpButton = withAutoConnect(async (gumpId, buttonId) => { retur
 export const NumGumpTextEntry = withAutoConnect(async (gumpId, entryId, text) => { return methods.NumGumpTextEntry(gumpId, entryId, text); });
 export const NumGumpRadiobutton = withAutoConnect(async (gumpId, groupId, number) => { return methods.NumGumpRadiobutton(gumpId, groupId, number); });
 export const NumGumpCheckBox = withAutoConnect(async (gumpId, checkBoxId, state) => { return methods.NumGumpCheckBox(gumpId, checkBoxId, state); });
-export const GetGumpsCount = withAutoConnect(async (gumpId) => { return methods.GetGumpsCount(gumpId); });
-export const CloseSimpleGump = withAutoConnect(async (gumpIndex) => { return methods.CloseSimpleGump(gumpIndex); });
+export const GetGumpsCount = withAutoConnect(async (gumpId) => { return methods.GetGumpsCount(gumpId); }, 'GetGumpsCount');
+export const CloseSimpleGump = withAutoConnect(async (gumpIndex) => { return methods.CloseSimpleGump(gumpIndex); }, 'CloseSimpleGump');
 export const GetGumpSerial = withAutoConnect(async (gumpIndex) => { return methods.GetGumpSerial(gumpIndex); });
 export const GetGumpID = withAutoConnect(async (gumpIndex) => { return methods.GetGumpID(gumpIndex); });
 export const IsGumpCanBeClosed = withAutoConnect(async (gumpIndex) => { return methods.IsGumpCanBeClosed(gumpIndex); });
@@ -574,7 +577,7 @@ export const ProfileShardName = withAutoConnect(async () => { return methods.Pro
 export const GetCharTitle = withAutoConnect(async () => { return methods.GetCharTitle(); });
 export const GetClilocByID = withAutoConnect(async (clilocId) => { return methods.GetClilocByID(clilocId); });
 export const GetFoundedParamID = withAutoConnect(async () => { return methods.GetFoundedParamID(); });
-export const FindQuantity = withAutoConnect(async (objId) => { return methods.FindQuantity(objId); });
+export const FindQuantity = withAutoConnect(async () => { return methods.FindQuantity(); });
 export const PredictedDirection = withAutoConnect(async () => { return methods.PredictedDirection(); });
 
 // Movement settings
@@ -608,15 +611,15 @@ export const UseOtherPaperdollScroll = withAutoConnect(async (objId) => { return
 
 // Skill locking
 export const ChangeSkillLockState = withAutoConnect(async (skillId, lockState) => { return methods.ChangeSkillLockState(skillId, lockState); });
-export const GetSkillLockState = withAutoConnect(async (skillId) => { return methods.GetSkillLockState(skillId); });
+export const GetSkillLockState = withAutoConnect(async (skillId) => { return methods.GetSkillLockState(skillId); }, 'GetSkillLockState');
 
 // Journal extended
 export const InJournalBetweenTimes = withAutoConnect(async (text, timeBegin, timeEnd) => { return methods.InJournalBetweenTimes(text, timeBegin, timeEnd); });
 export const SetJournalLine = withAutoConnect(async (index, text) => { return methods.SetJournalLine(index, text); });
 export const AddJournalIgnore = withAutoConnect(async (text) => { return methods.AddJournalIgnore(text); });
-export const ClearJournalIgnore = withAutoConnect(async (text) => { return methods.ClearJournalIgnore(text); });
+export const ClearJournalIgnore = withAutoConnect(async () => { return methods.ClearJournalIgnore(); });
 export const AddChatUserIgnore = withAutoConnect(async (name) => { return methods.AddChatUserIgnore(name); });
-export const ClearChatUserIgnore = withAutoConnect(async (name) => { return methods.ClearChatUserIgnore(name); });
+export const ClearChatUserIgnore = withAutoConnect(async () => { return methods.ClearChatUserIgnore(); });
 
 // Line methods
 export const LineID = withAutoConnect(async () => { return methods.LineID(); });
@@ -683,11 +686,13 @@ export const GetSilentMode = withAutoConnect(async () => { return methods.GetSil
 export const CheckLag = withAutoConnect(async (value) => { return methods.CheckLag(value); });
 
 // Gump extended
-export const GetGumpTextLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpTextLines(gumpIndex); });
-export const GetGumpFullLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpFullLines(gumpIndex); });
-export const GetGumpShortLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpShortLines(gumpIndex); });
-export const GetGumpButtonsDescription = withAutoConnect(async (gumpIndex) => { return methods.GetGumpButtonsDescription(gumpIndex); });
-export const GetGumpInfo = withAutoConnect(async (gumpIndex) => { return methods.GetGumpInfo(gumpIndex); });
+export const GetGumpTextLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpTextLines(gumpIndex); }, 'GetGumpTextLines');
+export const GetGumpFullLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpFullLines(gumpIndex); }, 'GetGumpFullLines');
+export const GetGumpShortLines = withAutoConnect(async (gumpIndex) => { return methods.GetGumpShortLines(gumpIndex); }, 'GetGumpShortLines');
+export const GetGumpButtonsDescription = withAutoConnect(async (gumpIndex) => { return methods.GetGumpButtonsDescription(gumpIndex); }, 'GetGumpButtonsDescription');
+export const GetGumpInfo = withAutoConnect(async (gumpIndex) => { return methods.GetGumpInfo(gumpIndex); }, 'GetGumpInfo');
+// Alias for convenience
+export const InfoGump = GetGumpInfo;
 export const AddGumpIgnoreByID = withAutoConnect(async (gumpId) => { return methods.AddGumpIgnoreByID(gumpId); });
 export const AddGumpIgnoreBySerial = withAutoConnect(async (serial) => { return methods.AddGumpIgnoreBySerial(serial); });
 export const ClearGumpsIgnore = withAutoConnect(async () => { return methods.ClearGumpsIgnore(); });
@@ -715,7 +720,7 @@ export const SetDropDelay = withAutoConnect(async (value) => { return methods.Se
 // Pathfinding
 export const GetPathArray = withAutoConnect(async (x, y, running, accuracyXY) => { return methods.GetPathArray(x, y, running, accuracyXY); });
 export const GetPathArray3D = withAutoConnect(async (x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running) => { return methods.GetPathArray3D(x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running); });
-export const GetNextStepZ = withAutoConnect(async (x1, y1, z1, x2, y2, worldNum, stepZ) => { return methods.GetNextStepZ(x1, y1, z1, x2, y2, worldNum, stepZ); });
+export const GetNextStepZ = withAutoConnect(async (currX, currY, destX, destY, worldNum, currZ) => { return methods.GetNextStepZ(currX, currY, destX, destY, worldNum, currZ); });
 
 // Tile/Map
 export const GetTileFlags = withAutoConnect(async (worldNum, tileType) => { return methods.GetTileFlags(worldNum, tileType); });
@@ -867,7 +872,7 @@ export const GetLandsArray = withAutoConnect(async () => { return methods.GetLan
 export const GetShopList = withAutoConnect(async () => { return methods.GetShopList(); });
 export const ClearShopList = withAutoConnect(async () => { return methods.ClearShopList(); });
 export const GetToolTipRec = withAutoConnect(async (objId) => { return methods.GetToolTipRec(objId); });
-export const GetSkillCurrentValue = withAutoConnect(async (skillName) => { return methods.GetSkillCurrentValue(skillName); });
+export const GetSkillCurrentValue = withAutoConnect(async (skillName) => { return methods.GetSkillCurrentValue(skillName); }, 'GetSkillCurrentValue');
 
 // Export raw methods for batch operations
 export function getRawMethods() { return methodsRaw; }
@@ -882,6 +887,10 @@ export function getConnectionState() {
 export async function closeConnectionPool() {
   for (const conn of connectionPool) {
     if (conn.protocol && conn.protocol.socket) {
+      // Stop polling first to clear intervals
+      if (conn.protocol.stopPolling) {
+        conn.protocol.stopPolling();
+      }
       // Clear all pending timeouts
       if (conn.protocol.pendingPromises) {
         for (const [id, promise] of conn.protocol.pendingPromises) {
@@ -954,7 +963,7 @@ function createAutoAwaitedExports() {
     WaitTargetSelf, WaitTargetLast, CancelWaitTarget,
     LastTarget, LastAttack, LastContainer, LastObject,
     PredictedX, PredictedY, PredictedZ,
-    GetFindDistance, GetFindVertical, SetFindVertical, FindAtCoord, FindItem, FindCount, FindFullQuantity, Ignore, IgnoreOff,
+    GetFindDistance, GetFindVertical, SetFindVertical, FindNotoriety, FindAtCoord, FindItem, FindCount, FindFullQuantity, Ignore, IgnoreOff,
     IgnoreReset, GetIgnoreList,
     InJournal, LastJournalMessage, Journal, LowJournal, HighJournal,
     ClearJournal, AddToSystemJournal,
@@ -971,7 +980,7 @@ function createAutoAwaitedExports() {
     AutoBuy, AutoBuyEx, GetAutoBuyDelay, SetAutoBuyDelay, AutoSell, GetAutoSellDelay, SetAutoSellDelay, GetShopList, ClearShopList,
     WaitMenu, AutoMenu, MenuPresent, CancelMenu, CloseMenu, WaitGump, WaitTextEntry, GumpAutoTextEntry, GumpAutoRadiobutton, GumpAutoCheckBox,
     NumGumpButton, NumGumpTextEntry, NumGumpRadiobutton, NumGumpCheckBox, GetGumpsCount, CloseSimpleGump, GetGumpSerial, GetGumpID, IsGumpCanBeClosed,
-    GetGumpTextLines, GetGumpFullLines, GetGumpShortLines, GetGumpButtonsDescription, GetGumpInfo, AddGumpIgnoreByID, AddGumpIgnoreBySerial, ClearGumpsIgnore,
+    GetGumpTextLines, GetGumpFullLines, GetGumpShortLines, GetGumpButtonsDescription, GetGumpInfo, InfoGump, AddGumpIgnoreByID, AddGumpIgnoreBySerial, ClearGumpsIgnore,
     UOSay, UOSayColor,
     InviteToParty, RemoveFromParty, PartySay, PartyCanLootMe, PartyAcceptInvite, PartyMessageTo, PartyDeclineInvite, PartyLeave, InParty, PartyMembersList,
     FireResist, ColdResist, PoisonResist, EnergyResist,
@@ -1047,6 +1056,8 @@ export const parallel = customMethods.parallel;
 export const parallel_items = customMethods.parallel_items;
 export const FindProps = customMethods.FindProps;
 export const Find = customMethods.Find;
+export const getXY = customMethods.getXY;
+export const getXYZ = customMethods.getXYZ;
 
 if (typeof globalThis !== 'undefined') {
   const exports = createAutoAwaitedExports(customMethods);
@@ -1056,6 +1067,8 @@ if (typeof globalThis !== 'undefined') {
     parallel_items, 
     FindProps,
     Find,
+    getXY,
+    getXYZ,
     LAYERS, DIRECTIONS, NOTORIETY, SPELLS, SKILL_NAMES, EVENTS, METHOD_INDICES, getSpellId, BUFFS, getBuffName 
   });
 }

@@ -8,6 +8,9 @@
 // These will be available as globals after the main index.js loads
 declare const FindTypesArrayEx: (objTypes: number[], colors: number[], containers: number[], inSub: boolean) => Promise<number[]>;
 declare const Ground: () => number;
+declare const GetX: (objId: number) => Promise<number>;
+declare const GetY: (objId: number) => Promise<number>;
+declare const GetZ: (objId: number) => Promise<number>;
 
 // Cache connection state getters and modules to avoid repeated dynamic imports (performance!)
 let cachedGetConnectionState: any = null;
@@ -45,72 +48,45 @@ async function parallelInternal(commands, numConnections = 16) {
   // Ensure main connection is ready first (returns immediately if already connected)
   await cachedEnsureConnected();
   
-  const { HOST, PORT, connectionPool, protocol, methodsRaw } = cachedGetConnectionState();
+  const { protocol, methodsRaw } = cachedGetConnectionState();
   
-  if (!protocol || !methodsRaw || !PORT) {
+  if (!protocol || !methodsRaw) {
     throw new Error('Must call connect() first');
   }
   
-  // Cache module imports too for performance (only once)
-  if (!cachedCreateMethods || !cachedConnectToStealth) {
-    const methodsModule = await import('./methods.js');
-    const connectionModule = await import('./core/connection.js');
-    cachedCreateMethods = methodsModule.createMethods;
-    cachedConnectToStealth = connectionModule.connect;
-  }
-  
-  // Reuse or expand connection pool (skip port discovery - we already know PORT!)
-  // Only create new connections if we actually need them
-  if (connectionPool.length < numConnections) {
-    const needed = numConnections - connectionPool.length;
-    // Create ALL connections in parallel for maximum speed!
-    const connectPromises = Array(needed).fill(null).map(async () => {
-      // Direct connect with known port - NO port discovery!
-      const connProtocol = await cachedConnectToStealth(HOST, PORT);
-      const connMethods = cachedCreateMethods(connProtocol);
-      return { protocol: connProtocol, methods: connMethods, _instances: connMethods._instances };
-    });
-    const newConnections = await Promise.all(connectPromises);
-    connectionPool.push(...newConnections);
-  }
-  
-  // Use pool connections (trim if we need fewer)
-  // Don't verify connections here - just use them, they'll error if dead (faster!)
-  const connections = connectionPool.slice(0, numConnections);
-  
-  // Step 2: Send ALL requests immediately (non-blocking TCP writes)
-  // All packets queue up in socket buffers concurrently
-  // Direct loop - no intermediate object creation for speed!
+  // CRITICAL: Use ONE connection for all parallel calls
+  // Each method call gets a unique ID, so they can execute in parallel on the same connection
+  // This matches Python's behavior - one script, multiple parallel method calls
   const waitFunctions: Array<{ wait: () => Promise<any>, index: number }> = [];
   
-  for (let index = 0; index < commands.length; index++) {
-    const cmd = commands[index];
-    const connIdx = index % numConnections;
-    const conn = connections[connIdx];
-    
+  // First, resolve all promise arguments in parallel
+  const resolvedCommands = await Promise.all(commands.map(async (cmd, index) => {
     if (Array.isArray(cmd)) {
       const [fn, ...args] = cmd;
-      // Direct access to instances - faster!
-      const methodName = (fn as any)._methodName || fn.name;
-      const instance = conn._instances[methodName];
-      if (instance?.send) {
-        // Send NOW - synchronous call that queues packet in socket buffer
-        waitFunctions.push({ wait: instance.send(...args), index });
-      } else {
-        // Method not in instances - log warning for debugging
-        if (!instance && methodName && index < 10) {
-          // Only log first few to avoid spam
-          console.warn(`Method ${methodName} not found in _instances, using fallback. Available:`, Object.keys(conn._instances).slice(0, 10).join(', '));
-        }
-        // Fallback: execute as promise
-        waitFunctions.push({ wait: () => fn(...args), index });
-      }
+      // Resolve any promise arguments
+      const resolvedArgs = await Promise.all(args.map(arg => 
+        arg && typeof arg.then === 'function' ? arg : Promise.resolve(arg)
+      ));
+      return { type: 'array', fn, args: resolvedArgs, index };
     } else if (typeof cmd === 'function') {
-      waitFunctions.push({ wait: () => cmd(), index });
+      return { type: 'function', fn: cmd, index };
     } else if (cmd && typeof cmd.then === 'function') {
-      waitFunctions.push({ wait: () => cmd, index });
+      return { type: 'promise', promise: cmd, index };
     } else {
-      waitFunctions.push({ wait: () => Promise.resolve(cmd), index });
+      return { type: 'value', value: cmd, index };
+    }
+  }));
+  
+  // Now create wait functions - all methods will be called in parallel
+  for (const resolved of resolvedCommands) {
+    if (resolved.type === 'array') {
+      waitFunctions.push({ wait: () => resolved.fn(...resolved.args), index: resolved.index });
+    } else if (resolved.type === 'function') {
+      waitFunctions.push({ wait: () => resolved.fn(), index: resolved.index });
+    } else if (resolved.type === 'promise') {
+      waitFunctions.push({ wait: () => resolved.promise, index: resolved.index });
+    } else {
+      waitFunctions.push({ wait: () => Promise.resolve(resolved.value), index: resolved.index });
     }
   }
   
@@ -452,5 +428,30 @@ export async function Find(options) {
   });
   
   return results;
+}
+
+/**
+ * Gets X and Y coordinates of an object in parallel
+ * @param objId - Object ID
+ * @returns Promise<[x, y]>
+ */
+export async function getXY(objId: number): Promise<[number, number]> {
+  return await parallel([
+    [GetX, objId],
+    [GetY, objId]
+  ]);
+}
+
+/**
+ * Gets X, Y, and Z coordinates of an object in parallel
+ * @param objId - Object ID
+ * @returns Promise<[x, y, z]>
+ */
+export async function getXYZ(objId: number): Promise<[number, number, number]> {
+  return await parallel([
+    [GetX, objId],
+    [GetY, objId],
+    [GetZ, objId]
+  ]);
 }
 

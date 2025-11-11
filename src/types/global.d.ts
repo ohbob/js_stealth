@@ -170,6 +170,8 @@ declare global {
   function parallel(commands: Array<[Function, ...any[]] | Function | Promise<any>>, numConnections?: number): Promise<any[]>;
   function parallel_items(items: number[], operations: Function[], numConnections?: number): Promise<Array<{ id: number; data: any[] }>>;
   function FindProps(items: (number | { id: number; [key: string]: any })[], operations: Function[], keys?: string[], numConnections?: number): Promise<Array<{ id: number; [key: string]: any }>>;
+  function getXY(objId: number): Promise<[number, number]>;
+  function getXYZ(objId: number): Promise<[number, number, number]>;
         // Find items and get their properties in one call
         // objTypes/objType: Can be number or hex format (e.g., 401, 0x0191, [401, 0x0191])
         // colors/color: Can be number or hex format (e.g., 65535, 0xFFFF, [0xFFFF, 0x0000])
@@ -194,8 +196,8 @@ declare global {
         }): Promise<Array<{ id: number; [key: string]: any }>>;
 
   // Movement
-  function Step(Direction: Direction | DirectionValue, Running?: boolean): Promise<number>;
-  function StepQ(Direction: Direction | DirectionValue, Running?: boolean): Promise<number>;
+  function Step(Direction: Direction | DirectionValue, Running?: boolean, EnsureDirection?: boolean): Promise<number>;
+  function StepQ(Direction: Direction | DirectionValue, Running?: boolean, EnsureDirection?: boolean): Promise<number>;
   function MoveXY(Xdst: number, Ydst: number, AccuracyXY: number, Running: boolean, Exact?: boolean): Promise<boolean>;
   function MoveXYZ(Xdst: number, Ydst: number, Zdst: number, AccuracyXY: number, AccuracyZ: number, Running: boolean): Promise<boolean>;
   function newMoveXY(Xdst: number, Ydst: number, Optimized: number, Accuracy: number, Running: boolean): Promise<boolean>;
@@ -255,6 +257,8 @@ declare global {
   function GetGumpShortLines(GumpIndex: number): Promise<string[]>;
   function GetGumpButtonsDescription(GumpIndex: number): Promise<any>;
   function GetGumpInfo(GumpIndex: number): Promise<any>;
+  // Alias for GetGumpInfo
+  function InfoGump(GumpIndex: number): Promise<any>;
   function AddGumpIgnoreByID(ID: number): Promise<void>;
   function AddGumpIgnoreBySerial(Serial: number): Promise<void>;
   function ClearGumpsIgnore(): Promise<void>;
@@ -322,14 +326,14 @@ declare global {
   function FindAtCoord(X: number, Y: number): Promise<number[]>;
   function FindItem(): Promise<number>;
   function FindCount(): Promise<number>;
-  function FindFullQuantity(ObjID: number): Promise<number>;
+  function FindFullQuantity(): Promise<number>;
   function Ignore(ObjID: number): Promise<void>;
   function IgnoreOff(ObjID: number): Promise<void>;
   function IgnoreReset(): Promise<void>;
   function GetIgnoreList(): Promise<number[]>;
   function SetFindInNulPoint(Value: boolean): Promise<void>;
   function GetFindInNulPoint(): Promise<boolean>;
-  function FindQuantity(ObjID: number): Promise<number>;
+  function FindQuantity(): Promise<number>;
   // ObjTypes array can contain numbers or hex format (e.g., [401, 0x0191])
   // Colors array can contain numbers or hex format (e.g., [65535, 0xFFFF])
   // Containers array can contain numbers, hex, or function results (e.g., [0, Ground(), Backpack()])
@@ -351,10 +355,10 @@ declare global {
   function CheckLOS(xf: number, yf: number, zf: number, xt: number, yt: number, zt: number, WorldNum: number, LOSCheckType: number, LOSOptions: number): Promise<boolean>;
   function SetMoveOpenDoor(Value: boolean): Promise<void>;
   function GetMoveOpenDoor(): Promise<boolean>;
-  function SetMoveThroughNPC(Value: boolean): Promise<void>;
-  function GetMoveThroughNPC(): Promise<boolean>;
-  function SetMoveCheckStamina(Value: boolean): Promise<void>;
-  function GetMoveCheckStamina(): Promise<boolean>;
+  function SetMoveThroughNPC(Value: number): Promise<void>;
+  function GetMoveThroughNPC(): Promise<number>;
+  function SetMoveCheckStamina(Value: number): Promise<void>;
+  function GetMoveCheckStamina(): Promise<number>;
   function SetMoveThroughCorner(Value: boolean): Promise<void>;
   function GetMoveThroughCorner(): Promise<boolean>;
   function SetMoveHeuristicMult(Value: number): Promise<void>;
@@ -409,9 +413,9 @@ declare global {
   function InJournalBetweenTimes(Str: string, TimeBegin: number, TimeEnd: number): Promise<number>;
   function SetJournalLine(StringIndex: number, Text: string): Promise<void>;
   function AddJournalIgnore(Str: string): Promise<void>;
-  function ClearJournalIgnore(Str: string): Promise<void>;
+  function ClearJournalIgnore(): Promise<void>;
   function AddChatUserIgnore(User: string): Promise<void>;
-  function ClearChatUserIgnore(User: string): Promise<void>;
+  function ClearChatUserIgnore(): Promise<void>;
   function AddToSystemJournalEx(value: string, textcolor?: number, bgcolor?: number, fontsize?: number, fontname?: string): Promise<void>;
   function ClearSystemJournal(): Promise<void>;
 

@@ -125,6 +125,10 @@ export async function connect(host: string = HOST, port: number | null = null): 
       // Python uses non-blocking socket and actively calls recv()
       socket.setKeepAlive(true, 60000); // Keep connection alive
       
+      // Unref socket so it doesn't keep the process alive
+      // This allows process to exit when script finishes
+      socket.unref();
+      
       const protocol = new Protocol(socket);
       
       const data = Buffer.concat([

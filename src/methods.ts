@@ -6,6 +6,131 @@ import {
 import type { Protocol } from './core/protocol.js';
 import { getSpellId, METHOD_INDICES, DIRECTIONS, type Layer, type Direction, type DirectionValue, type Notoriety, type SpellName, type SkillName } from './constants.js';
 
+// Helper functions to parse gump data from buffers
+function parseGumpStringArray(buf: Buffer): string[] {
+  if (!buf || buf.length === 0) return [];
+  const result: string[] = [];
+  let offset = 0;
+  
+  // Check if there's a count prefix (first 4 bytes might be count)
+  if (buf.length >= 4) {
+    const possibleCount = unpackUInt32(buf, 0);
+    // If count is reasonable (< 10000) and we have enough data, treat as count
+    if (possibleCount < 10000 && buf.length >= 4 + possibleCount * 4) {
+      offset = 4; // Skip count
+    }
+  }
+  
+  while (offset < buf.length) {
+    if (offset + 4 > buf.length) break;
+    const strLength = unpackUInt32(buf, offset);
+    offset += 4;
+    
+    // Validate length
+    if (strLength === 0 || strLength > buf.length || offset + strLength > buf.length) {
+      // Try to find next valid entry or break
+      break;
+    }
+    
+    const str = buf.toString('utf-16le', offset, offset + strLength).replace(/\0+$/, '');
+    if (str.length > 0) {
+      result.push(str);
+    }
+    offset += strLength;
+  }
+  
+  return result;
+}
+
+function parseGumpInfo(buf: Buffer): any {
+  if (!buf || buf.length === 0) return {};
+  const result: any = {};
+  
+  // GetGumpInfo returns the same format as GetGumpFullLines - array of strings
+  // Parse it as string array first, then convert to object
+  const lines = parseGumpStringArray(buf);
+  
+  // Parse lines like "Serial: 0065", "GumpID: 0059", etc. into object
+  for (const line of lines) {
+    if (!line || !line.trim()) continue;
+    
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const key = line.substring(0, colonIndex).trim();
+      const value = line.substring(colonIndex + 1).trim();
+      
+      // Try to convert hex strings (like "0065") to numbers
+      let numValue: number | null = null;
+      if (value.match(/^[0-9A-Fa-f]+$/)) {
+        numValue = parseInt(value, 16);
+      } else {
+        numValue = value ? Number(value) : null;
+      }
+      
+      result[key] = (numValue !== null && !isNaN(numValue) && value.trim() !== '') ? numValue : value;
+    } else if (line.trim()) {
+      // If no colon, store as additional text
+      if (!result._text) result._text = [];
+      if (Array.isArray(result._text)) {
+        result._text.push(line.trim());
+      }
+    }
+  }
+  
+  return result;
+}
+
+function parseGumpButtons(buf: Buffer): any[] {
+  if (!buf || buf.length === 0) return [];
+  const result: any[] = [];
+  
+  // Parse as array of strings first (like GetGumpTextLines)
+  const lines = parseGumpStringArray(buf);
+  if (lines.length === 0) return [];
+  
+  // Parse button descriptions
+  // Format: Header line "GumpButtons: X   Y   Released_ID  Pressed_ID   Quit   Page_ID   Return_value   Page"
+  // Followed by data lines like "0: 130  187  2225  2225  0  2  0  0"
+  const headerLine = lines.find(line => line.includes('GumpButtons') || (line.includes('X') && line.includes('Y')));
+  const headers = headerLine ? headerLine.split(/\s+/).filter(h => h) : ['Index', 'X', 'Y', 'Released_ID', 'Pressed_ID', 'Quit', 'Page_ID', 'Return_value', 'Page'];
+  
+  for (const line of lines) {
+    if (!line || !line.trim()) continue;
+    
+    // Skip header lines
+    if (line.includes('GumpButtons') || (line.includes('X') && line.includes('Y') && line.includes('Released_ID'))) {
+      continue;
+    }
+    
+    // Parse data lines like "0: 130  187  2225  2225  0  2  0  0"
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const buttonIndex = line.substring(0, colonIndex).trim();
+      const values = line.substring(colonIndex + 1).trim().split(/\s+/).filter(v => v);
+      
+      const entry: any = {
+        index: parseInt(buttonIndex) || buttonIndex
+      };
+      
+      // Map values to headers (skip first header if it's "GumpButtons:")
+      const startIdx = headers[0] === 'GumpButtons' ? 1 : 0;
+      for (let i = 0; i < values.length && (i + startIdx) < headers.length; i++) {
+        const header = headers[i + startIdx];
+        const value = values[i];
+        const numValue = value ? Number(value) : null;
+        entry[header] = (numValue !== null && !isNaN(numValue)) ? numValue : value;
+      }
+      
+      result.push(entry);
+    } else if (line.trim()) {
+      // Plain text line
+      result.push({ text: line.trim() });
+    }
+  }
+  
+  return result;
+}
+
 class ScriptMethod {
   constructor(protocol, methodIndex, argTypes, returnType) {
     this.protocol = protocol;
@@ -145,7 +270,7 @@ export function createMethods(protocol) {
     
     // Actions
     ClickOnObject: (objId) => new ScriptMethod(protocol, METHOD_INDICES.ClickOnObject, [packUInt32], null).call(objId),
-    UseObject: (objId) => new ScriptMethod(protocol, METHOD_INDICES.UseObject, [packUInt32], (buf) => unpackUInt32(buf)).call(objId),
+    UseObject: (objId) => new ScriptMethod(protocol, METHOD_INDICES.UseObject, [packUInt32], null).call(objId),
     UseType: (objType, color = 0xFFFF) => new ScriptMethod(protocol, METHOD_INDICES.UseType, [packUInt16, packUInt16], (buf) => unpackUInt32(buf)).call(objType, color),
     UseFromGround: (objType, color = 0xFFFF) => new ScriptMethod(protocol, METHOD_INDICES.UseFromGround, [packUInt16, packUInt16], (buf) => unpackUInt32(buf)).call(objType, color),
     Attack: (objId) => new ScriptMethod(protocol, METHOD_INDICES.Attack, [packUInt32], (buf) => unpackUInt32(buf)).call(objId),
@@ -188,7 +313,7 @@ export function createMethods(protocol) {
     Stam: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfStam, [], (buf) => unpackInt16(buf)).call(),
     MaxHP: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfMaxLife, [], (buf) => unpackInt16(buf)).call(),
     MaxMana: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfMaxMana, [], (buf) => unpackInt16(buf)).call(),
-    MaxStam: () => new ScriptMethod(protocol, METHOD_INDICES.GetMaxStam, [], (buf) => unpackInt16(buf)).call(),
+    MaxStam: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfMaxStam, [], (buf) => unpackInt16(buf)).call(),
     Gold: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfGold, [], (buf) => unpackUInt32(buf)).call(),
     Weight: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfWeight, [], (buf) => unpackUInt16(buf)).call(),
     MaxWeight: () => new ScriptMethod(protocol, METHOD_INDICES.GetSelfMaxWeight, [], (buf) => unpackUInt16(buf)).call(),
@@ -288,11 +413,48 @@ export function createMethods(protocol) {
     GetFindDistance: () => new ScriptMethod(protocol, METHOD_INDICES.GetFindDistance, [], (buf) => unpackUInt32(buf)).call(),
     GetFindVertical: () => new ScriptMethod(protocol, METHOD_INDICES.GetFindVertical, [], (buf) => unpackUInt32(buf)).call(),
     SetFindVertical: (value) => new ScriptMethod(protocol, METHOD_INDICES.SetFindVertical, [packUInt32], null).call(value),
-    FindNotoriety: (objType, notoriety) => new ScriptMethod(protocol, METHOD_INDICES.FindNotoriety, [packUInt16, packUInt8], (buf) => unpackUInt32(buf)).call(objType, notoriety),
-    FindAtCoord: (x, y) => new ScriptMethod(protocol, METHOD_INDICES.FindAtCoord, [packUInt16, packUInt16], (buf) => unpackUInt32(buf)).call(x, y),
+    FindNotoriety: (objType, notoriety) => {
+      // Returns array of uint32s (object IDs), similar to GetFindedList and FindAtCoord
+      const method = new ScriptMethod(protocol, METHOD_INDICES.FindNotoriety, [packUInt16, packUInt8], 
+        (buf) => {
+          if (!buf || buf.length < 4) {
+            return [];
+          }
+          const count = unpackUInt32(buf, 0);
+          const items = [];
+          let offset = 4;
+          for (let i = 0; i < count && offset + 4 <= buf.length; i++) {
+            items.push(unpackUInt32(buf, offset));
+            offset += 4;
+          }
+          return items;
+        });
+      return method.call(objType, notoriety);
+    },
+    FindAtCoord: (x, y) => {
+      // Returns array of uint32s (object IDs), similar to GetFindedList
+      const method = new ScriptMethod(protocol, METHOD_INDICES.FindAtCoord, [packUInt16, packUInt16], 
+        (buf) => {
+          if (!buf || buf.length < 4) {
+            return [];
+          }
+          const count = unpackUInt32(buf, 0);
+          const items = [];
+          let offset = 4;
+          for (let i = 0; i < count && offset + 4 <= buf.length; i++) {
+            items.push(unpackUInt32(buf, offset));
+            offset += 4;
+          }
+          return items;
+        });
+      return method.call(x, y);
+    },
     FindItem: () => new ScriptMethod(protocol, METHOD_INDICES.GetFindItem, [], (buf) => unpackUInt32(buf)).call(),
     FindCount: () => new ScriptMethod(protocol, METHOD_INDICES.GetFindCount, [], (buf) => unpackInt32(buf)).call(),
-    FindFullQuantity: (objId) => new ScriptMethod(protocol, METHOD_INDICES.FindFullQuantity, [packUInt32], (buf) => unpackInt32(buf)).call(objId),
+    // FindFullQuantity: method 142 - returns full quantity of found item
+    // CRITICAL: This method takes NO arguments! It returns full quantity of the first item in GetFindedList
+    // Format: no arguments, returns unpackInt32 (full quantity)
+    FindFullQuantity: () => new ScriptMethod(protocol, METHOD_INDICES.FindFullQuantity, [], (buf) => unpackInt32(buf)).call(),
     Ignore: (objId) => new ScriptMethod(protocol, METHOD_INDICES.Ignore, [packUInt32], null).call(objId),
     IgnoreOff: (objId) => new ScriptMethod(protocol, METHOD_INDICES.IgnoreOff, [packUInt32], null).call(objId),
     IgnoreReset: () => new ScriptMethod(protocol, METHOD_INDICES.IgnoreReset, [], null).call(),
@@ -434,12 +596,42 @@ export function createMethods(protocol) {
     ObjAtLayerEx: (layer: Layer | number, objId = 0) => new ScriptMethod(protocol, METHOD_INDICES.ObjAtLayerEx, [packUInt8, packUInt32], (buf) => unpackUInt32(buf)).call(layer as number, objId),
     
     // Movement
-    Step: (direction: Direction | DirectionValue, run = false) => {
+    Step: async (direction: Direction | DirectionValue, run = false, ensureDirection = false) => {
       const dirValue = typeof direction === 'string' ? DIRECTIONS[direction] : direction;
+      
+      // If ensureDirection flag is set, check if character is facing the right direction
+      // If not, turn first by making a step (which will turn the character)
+      if (ensureDirection) {
+        const currentDir = await new ScriptMethod(protocol, METHOD_INDICES.PredictedDirection, [], (buf) => unpackUInt8(buf)).call();
+        if (currentDir !== dirValue) {
+          // Character is not facing the right direction - turn first
+          // Making a step in the desired direction will turn the character
+          await new ScriptMethod(protocol, METHOD_INDICES.Step, [packUInt8, packBool], (buf) => unpackUInt8(buf)).call(dirValue, run);
+          // Wait a bit for turn to complete
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      // Now make the actual step
       return new ScriptMethod(protocol, METHOD_INDICES.Step, [packUInt8, packBool], (buf) => unpackUInt8(buf)).call(dirValue, run);
     },
-    StepQ: (direction: Direction | DirectionValue, run = false) => {
+    StepQ: async (direction: Direction | DirectionValue, run = false, ensureDirection = false) => {
       const dirValue = typeof direction === 'string' ? DIRECTIONS[direction] : direction;
+      
+      // If ensureDirection flag is set, check if character is facing the right direction
+      // If not, turn first by making a step (which will turn the character)
+      if (ensureDirection) {
+        const currentDir = await new ScriptMethod(protocol, METHOD_INDICES.PredictedDirection, [], (buf) => unpackUInt8(buf)).call();
+        if (currentDir !== dirValue) {
+          // Character is not facing the right direction - turn first
+          // Making a step in the desired direction will turn the character
+          await new ScriptMethod(protocol, METHOD_INDICES.StepQ, [packUInt8, packBool], (buf) => unpackInt32(buf)).call(dirValue, run);
+          // Wait a bit for turn to complete
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      // Now make the actual step
       return new ScriptMethod(protocol, METHOD_INDICES.StepQ, [packUInt8, packBool], (buf) => unpackInt32(buf)).call(dirValue, run);
     },
     MoveXYZ: (x, y, z, accuracyXY, accuracyZ, running) => new ScriptMethod(protocol, METHOD_INDICES.MoveXYZ, [packUInt16, packUInt16, packInt8, packInt32, packInt32, packBool], (buf) => unpackBool(buf)).call(x, y, z, accuracyXY, accuracyZ, running),
@@ -473,7 +665,9 @@ export function createMethods(protocol) {
     SetGoodLocation: (x, y) => new ScriptMethod(protocol, METHOD_INDICES.SetGoodLocation, [packUInt16, packUInt16], null).call(x, y),
     ClearBadLocationList: () => new ScriptMethod(protocol, METHOD_INDICES.ClearBadLocationList, [], null).call(),
     SetBadObject: (objType, color, radius) => new ScriptMethod(protocol, METHOD_INDICES.SetBadObject, [packUInt16, packUInt16, packUInt8], null).call(objType, color, radius),
-    ClearBadObjectList: () => new ScriptMethod(protocol, METHOD_INDICES.ClearBadObjectList, [], (buf) => unpackBool(buf)).call(),
+    // ClearBadObjectList: method 332 - clears all bad object entries
+    // CRITICAL: This method takes NO arguments and returns NO value (void)
+    ClearBadObjectList: () => new ScriptMethod(protocol, METHOD_INDICES.ClearBadObjectList, [], null).call(),
     CheckLOS: (x1, y1, z1, x2, y2, z2, worldNum, flags, objId) => new ScriptMethod(protocol, METHOD_INDICES.CheckLOS, [packUInt16, packUInt16, packInt8, packUInt16, packUInt16, packInt8, packUInt8, packUInt8, packUInt32], (buf) => unpackBool(buf)).call(x1, y1, z1, x2, y2, z2, worldNum, flags, objId),
     
     // Gumps/Menus
@@ -491,8 +685,13 @@ export function createMethods(protocol) {
     NumGumpTextEntry: (gumpId, entryId, text) => new ScriptMethod(protocol, METHOD_INDICES.NumGumpTextEntry, [packUInt16, packInt32, packString], (buf) => unpackBool(buf)).call(gumpId, entryId, text),
     NumGumpRadiobutton: (gumpId, groupId, number) => new ScriptMethod(protocol, METHOD_INDICES.NumGumpRadiobutton, [packUInt16, packInt32, packInt32], (buf) => unpackBool(buf)).call(gumpId, groupId, number),
     NumGumpCheckBox: (gumpId, checkBoxId, state) => new ScriptMethod(protocol, METHOD_INDICES.NumGumpCheckBox, [packUInt16, packInt32, packInt32], (buf) => unpackBool(buf)).call(gumpId, checkBoxId, state),
-    GetGumpsCount: (gumpId) => new ScriptMethod(protocol, METHOD_INDICES.GetGumpsCount, [packUInt16], (buf) => unpackUInt16(buf)).call(gumpId),
-    CloseSimpleGump: (gumpIndex) => new ScriptMethod(protocol, METHOD_INDICES.CloseSimpleGump, [packUInt16], (buf) => unpackUInt32(buf)).call(gumpIndex),
+    GetGumpsCount: (gumpId) => {
+      if (gumpId === undefined || gumpId === null) {
+        return new ScriptMethod(protocol, METHOD_INDICES.GetGumpsCount, [], (buf) => unpackUInt16(buf)).call();
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.GetGumpsCount, [packUInt16], (buf) => unpackUInt16(buf)).call(gumpId);
+    },
+    CloseSimpleGump: (gumpIndex) => new ScriptMethod(protocol, METHOD_INDICES.CloseSimpleGump, [packUInt16], null).call(gumpIndex),
     GetGumpSerial: (gumpIndex) => new ScriptMethod(protocol, METHOD_INDICES.GetGumpSerial, [packUInt16], (buf) => unpackUInt32(buf)).call(gumpIndex),
     GetGumpID: (gumpIndex) => new ScriptMethod(protocol, METHOD_INDICES.GetGumpID, [packUInt16], (buf) => unpackUInt32(buf)).call(gumpIndex),
     IsGumpCanBeClosed: (gumpIndex) => new ScriptMethod(protocol, METHOD_INDICES.IsGumpCanBeClosed, [packUInt16], (buf) => unpackBool(buf)).call(gumpIndex),
@@ -547,7 +746,10 @@ export function createMethods(protocol) {
     GetCharTitle: () => new ScriptMethod(protocol, METHOD_INDICES.GetCharTitle, [], (buf) => unpackString(buf)).call(),
     GetClilocByID: (clilocId) => new ScriptMethod(protocol, METHOD_INDICES.GetClilocByID, [packUInt32], (buf) => unpackString(buf)).call(clilocId),
     GetFoundedParamID: () => new ScriptMethod(protocol, METHOD_INDICES.GetFoundedParamID, [], (buf) => unpackInt32(buf)).call(),
-    FindQuantity: (objId) => new ScriptMethod(protocol, METHOD_INDICES.FindQuantity, [packUInt32], (buf) => unpackInt32(buf)).call(objId),
+    // FindQuantity: method 141 - returns quantity of found item
+    // CRITICAL: This method takes NO arguments! It returns quantity of the first item in GetFindedList
+    // Format: no arguments, returns unpackInt16 (quantity)
+    FindQuantity: () => new ScriptMethod(protocol, METHOD_INDICES.FindQuantity, [], (buf) => unpackInt16(buf)).call(),
     PredictedDirection: () => new ScriptMethod(protocol, METHOD_INDICES.PredictedDirection, [], (buf) => unpackUInt8(buf)).call(),
     
     // Movement settings
@@ -568,7 +770,7 @@ export function createMethods(protocol) {
     // Abilities
     UsePrimaryAbility: () => new ScriptMethod(protocol, METHOD_INDICES.UsePrimaryAbility, [], (buf) => unpackString(buf)).call(),
     UseSecondaryAbility: () => new ScriptMethod(protocol, METHOD_INDICES.UseSecondaryAbility, [], (buf) => unpackString(buf)).call(),
-    GetAbility: (abilityName) => new ScriptMethod(protocol, METHOD_INDICES.GetAbility, [packString], (buf) => unpackString(buf)).call(abilityName),
+    GetAbility: (abilityName) => new ScriptMethod(protocol, METHOD_INDICES.GetAbility, [packString], (buf) => unpackUInt32(buf)).call(abilityName),
     ToggleFly: () => new ScriptMethod(protocol, METHOD_INDICES.ToggleFly, [], (buf) => unpackInt32(buf)).call(),
     
     // Virtues
@@ -585,16 +787,23 @@ export function createMethods(protocol) {
     
     // Journal extended
     InJournalBetweenTimes: (text, timeBegin, timeEnd) => {
-      // Convert JS Date to Delphi double (seconds since 1899-12-30)
-      const ddtBegin = (timeBegin.getTime() / 1000) + 2209161600;
-      const ddtEnd = (timeEnd.getTime() / 1000) + 2209161600;
+      // Convert JS Date or timestamp to Delphi double (seconds since 1899-12-30)
+      // Support both Date objects and numeric timestamps
+      const beginTime = timeBegin instanceof Date ? timeBegin.getTime() : (typeof timeBegin === 'number' ? timeBegin : new Date(timeBegin).getTime());
+      const endTime = timeEnd instanceof Date ? timeEnd.getTime() : (typeof timeEnd === 'number' ? timeEnd : new Date(timeEnd).getTime());
+      const ddtBegin = (beginTime / 1000) + 2209161600;
+      const ddtEnd = (endTime / 1000) + 2209161600;
       return new ScriptMethod(protocol, METHOD_INDICES.InJournalBetweenTimes, [packString, packDouble, packDouble], (buf) => unpackInt32(buf)).call(text, ddtBegin, ddtEnd);
     },
     SetJournalLine: (index, text) => new ScriptMethod(protocol, METHOD_INDICES.SetJournalLine, [packUInt32, packString], null).call(index, text),
     AddJournalIgnore: (text) => new ScriptMethod(protocol, METHOD_INDICES.AddJournalIgnore, [packString], null).call(text),
-    ClearJournalIgnore: (text) => new ScriptMethod(protocol, METHOD_INDICES.ClearJournalIgnore, [packString], null).call(text),
+    // ClearJournalIgnore: method 116 - clears all journal ignore entries
+    // CRITICAL: This method takes NO arguments! It clears all journal ignore entries
+    ClearJournalIgnore: () => new ScriptMethod(protocol, METHOD_INDICES.ClearJournalIgnore, [], null).call(),
     AddChatUserIgnore: (name) => new ScriptMethod(protocol, METHOD_INDICES.AddChatUserIgnore, [packString], null).call(name),
-    ClearChatUserIgnore: (name) => new ScriptMethod(protocol, METHOD_INDICES.ClearChatUserIgnore, [packString], null).call(name),
+    // ClearChatUserIgnore: method 118 - clears all chat user ignore entries
+    // CRITICAL: This method takes NO arguments! It clears all chat user ignore entries
+    ClearChatUserIgnore: () => new ScriptMethod(protocol, METHOD_INDICES.ClearChatUserIgnore, [], null).call(),
     
     // Line methods (for journal lines)
     LineID: () => new ScriptMethod(protocol, METHOD_INDICES.GetLineID, [], (buf) => unpackUInt32(buf)).call(),
@@ -611,7 +820,7 @@ export function createMethods(protocol) {
     LineName: () => new ScriptMethod(protocol, METHOD_INDICES.GetLineName, [], (buf) => unpackString(buf)).call(),
     
     // Find extended
-    SetFindInNulPoint: (value) => new ScriptMethod(protocol, METHOD_INDICES.SetFindInNulPoint, [packBool], (buf) => unpackBool(buf)).call(value),
+    SetFindInNulPoint: (value) => new ScriptMethod(protocol, METHOD_INDICES.SetFindInNulPoint, [packBool], null).call(value),
     GetFindInNulPoint: () => new ScriptMethod(protocol, METHOD_INDICES.GetFindInNulPoint, [], (buf) => unpackBool(buf)).call(),
     
     // Connection/Profile
@@ -646,8 +855,18 @@ export function createMethods(protocol) {
     // HTTP
     HTTP_Get: (url) => new ScriptMethod(protocol, METHOD_INDICES.HTTP_Get, [packString], (buf) => unpackString(buf)).call(url),
     HTTP_Post: (url, data) => new ScriptMethod(protocol, METHOD_INDICES.HTTP_Post, [packString, packString], (buf) => unpackString(buf)).call(url, data),
-    HTTP_Body: (requestId) => new ScriptMethod(protocol, METHOD_INDICES.HTTP_Body, [packUInt32], (buf) => unpackString(buf)).call(requestId),
-    HTTP_Header: (requestId) => new ScriptMethod(protocol, METHOD_INDICES.HTTP_Header, [packUInt32], (buf) => unpackString(buf)).call(requestId),
+    HTTP_Body: (requestId) => {
+      if (requestId === undefined || requestId === null) {
+        return new ScriptMethod(protocol, METHOD_INDICES.HTTP_Body, [], (buf) => unpackString(buf)).call();
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.HTTP_Body, [packUInt32], (buf) => unpackString(buf)).call(requestId);
+    },
+    HTTP_Header: (requestId) => {
+      if (requestId === undefined || requestId === null) {
+        return new ScriptMethod(protocol, METHOD_INDICES.HTTP_Header, [], (buf) => unpackString(buf)).call();
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.HTTP_Header, [packUInt32], (buf) => unpackString(buf)).call(requestId);
+    },
     
     // Party extended
     PartyMessageTo: (objId, text) => new ScriptMethod(protocol, METHOD_INDICES.PartyMessageTo, [packUInt32, packString], (buf) => unpackBool(buf)).call(objId, text),
@@ -671,23 +890,23 @@ export function createMethods(protocol) {
     
     // Gump extended
     GetGumpTextLines: (gumpIndex) => {
-      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpTextLines, [packUInt16], (buf) => buf);
+      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpTextLines, [packUInt16], (buf) => parseGumpStringArray(buf));
       return method.call(gumpIndex);
     },
     GetGumpFullLines: (gumpIndex) => {
-      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpFullLines, [packUInt16], (buf) => buf);
+      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpFullLines, [packUInt16], (buf) => parseGumpStringArray(buf));
       return method.call(gumpIndex);
     },
     GetGumpShortLines: (gumpIndex) => {
-      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpShortLines, [packUInt16], (buf) => buf);
+      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpShortLines, [packUInt16], (buf) => parseGumpStringArray(buf));
       return method.call(gumpIndex);
     },
     GetGumpButtonsDescription: (gumpIndex) => {
-      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpButtonsDescription, [packUInt16], (buf) => buf);
+      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpButtonsDescription, [packUInt16], (buf) => parseGumpButtons(buf));
       return method.call(gumpIndex);
     },
     GetGumpInfo: (gumpIndex) => {
-      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpInfo, [packUInt16], (buf) => buf);
+      const method = new ScriptMethod(protocol, METHOD_INDICES.GetGumpInfo, [packUInt16], (buf) => parseGumpInfo(buf));
       return method.call(gumpIndex);
     },
     AddGumpIgnoreByID: (gumpId) => new ScriptMethod(protocol, METHOD_INDICES.AddGumpIgnoreByID, [packUInt32], null).call(gumpId),
@@ -743,10 +962,28 @@ export function createMethods(protocol) {
       const method = new ScriptMethod(protocol, METHOD_INDICES.GetPathArray3D, [packUInt16, packUInt16, packInt8, packUInt16, packUInt16, packInt8, packUInt8, packInt32, packInt32, packBool], (buf) => buf);
       return await method.call(x1, y1, z1, x2, y2, z2, worldNum, accuracyXY, accuracyZ, running);
     },
-    GetNextStepZ: (x1, y1, z1, x2, y2, worldNum, stepZ) => new ScriptMethod(protocol, METHOD_INDICES.GetNextStepZ, [packUInt16, packUInt16, packUInt16, packUInt16, packUInt16, packUInt8, packInt8], (buf) => unpackInt8(buf)).call(x1, y1, z1, x2, y2, worldNum, stepZ),
+    // GetNextStepZ: method 366 - calculates next step Z coordinate
+    // Format: CurrX (ushort), CurrY (ushort), DestX (ushort), DestY (ushort), WorldNum (ubyte), CurrZ (byte)
+    // Returns: byte (next step Z)
+    // NOTE: Order is important: CurrX, CurrY, DestX, DestY, WorldNum, CurrZ (NOT z1, z2, stepZ!)
+    GetNextStepZ: (currX, currY, destX, destY, worldNum, currZ) => new ScriptMethod(protocol, METHOD_INDICES.GetNextStepZ, [packUInt16, packUInt16, packUInt16, packUInt16, packUInt8, packInt8], (buf) => unpackInt8(buf)).call(currX, currY, destX, destY, worldNum, currZ),
     
     // Tile/Map
-    GetTileFlags: (worldNum, tileType) => new ScriptMethod(protocol, METHOD_INDICES.GetTileFlags, [packUInt8, packUInt16], (buf) => unpackUInt32(buf)).call(worldNum, tileType),
+    GetTileFlags: (tileGroup, tile) => {
+      // TileGroup can be string or number - if string, convert to number (group index)
+      let groupNum;
+      if (typeof tileGroup === 'string') {
+        // Map common string values to group numbers (0=Land, 1=Static)
+        const groupMap = { 'land': 0, 'static': 1, 'Land': 0, 'Static': 1 };
+        groupNum = groupMap[tileGroup] !== undefined ? groupMap[tileGroup] : parseInt(tileGroup, 10);
+        if (isNaN(groupNum)) {
+          throw new Error(`Invalid TileGroup string: ${tileGroup}`);
+        }
+      } else {
+        groupNum = tileGroup;
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.GetTileFlags, [packUInt8, packUInt16], (buf) => unpackUInt32(buf)).call(groupNum, tile);
+    },
     GetLandTileData: (tileType) => {
       const method = new ScriptMethod(protocol, METHOD_INDICES.GetLandTileData, [packUInt16], (buf) => buf);
       return method.call(tileType);
@@ -833,8 +1070,18 @@ export function createMethods(protocol) {
       return method.call();
     },
     RequestStats: (objId) => new ScriptMethod(protocol, METHOD_INDICES.RequestStats, [packUInt32], (buf) => unpackBool(buf)).call(objId),
-    HelpRequest: (objId) => new ScriptMethod(protocol, METHOD_INDICES.HelpRequest, [packUInt32], (buf) => unpackBool(buf)).call(objId),
-    QuestRequest: (objId) => new ScriptMethod(protocol, METHOD_INDICES.QuestRequest, [packUInt32], (buf) => unpackBool(buf)).call(objId),
+    HelpRequest: (objId) => {
+      if (objId === undefined || objId === null) {
+        return new ScriptMethod(protocol, METHOD_INDICES.HelpRequest, [], null).call();
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.HelpRequest, [packUInt32], null).call(objId);
+    },
+    QuestRequest: (objId) => {
+      if (objId === undefined || objId === null) {
+        return new ScriptMethod(protocol, METHOD_INDICES.QuestRequest, [], null).call();
+      }
+      return new ScriptMethod(protocol, METHOD_INDICES.QuestRequest, [packUInt32], null).call(objId);
+    },
     RenameMobile: (objId, newName) => new ScriptMethod(protocol, METHOD_INDICES.RenameMobile, [packUInt32, packString], (buf) => unpackBool(buf)).call(objId, newName),
     MobileCanBeRenamed: (objId) => new ScriptMethod(protocol, METHOD_INDICES.MobileCanBeRenamed, [packUInt32], (buf) => unpackBool(buf)).call(objId),
     

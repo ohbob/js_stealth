@@ -1,6 +1,37 @@
 // All constants used in js_stealth
 // Consolidates LAYERS, DIRECTIONS, NOTORIETY, SPELLS, and other game constants
 
+// Reagent types (for spell casting)
+export const REAGENTS = {
+  BP: 0x0F7A, // Black Pearl
+  BM: 0x0F7B, // Bloodmoss
+  GA: 0x0F84, // Garlic
+  GI: 0x0F85, // Ginseng
+  MR: 0x0F86, // Mandrake Root
+  NS: 0x0F88, // Nightshade
+  SA: 0x0F8C, // Sulfurous Ash
+  SS: 0x0F8D, // Spider's Silk
+} as const;
+
+// Object types
+export const OBJECT_TYPES = {
+  runebook: [0x22C5],
+  gate: [0x0F6C],
+} as const;
+
+// Gump IDs
+export const GUMPS = {
+  runebook: 0059, //1551740969,
+  gate: 3899019871,
+} as const;
+
+// Runebook button indices
+export const RUNEBOOK_BUTTONS = {
+  recall: [-1, 5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 77, 83, 89, 95],
+  charges: [-4, 2, 8, 14, 20, 26, 32, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92],
+  gate: [0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96],
+} as const;
+
 // Layer constants (from py_stealth methods.py)
 export const LAYERS = {
   Rhand: 0x01,
@@ -699,7 +730,7 @@ export const METHOD_INDICES = {
   GlobalChatSendMsg: 363,
   GlobalChatActiveChannel: 364,
   GlobalChatChannelsList: 365,
-  GetNextStepZ: 367,
+  GetNextStepZ: 366,  // In py_stealth this is 366, not 367
   ClientHide: 368,
   GetSkillLockState: 371,
   GetStatLockState: 372,
